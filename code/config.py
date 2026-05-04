@@ -22,7 +22,7 @@ class AppConfig(BaseModel):
     # 阿里百炼(DashScope)配置
     dashscope_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     dashscope_api_key: str | None = None
-    dashscope_model: str = "qwen-plus"
+    dashscope_model: str | None = None
 
     # Embedding模型配置
     embedding_provider: str = "sentence-transformers"
@@ -34,7 +34,7 @@ class AppConfig(BaseModel):
     vllm_embedding_api_key: str = "EMPTY"
 
     # 阿里百炼Embedding配置
-    dashscope_embedding_model: str = "text-embedding-v3"
+    dashscope_embedding_model: str | None = None
 
     # 数据库配置
     db_type: str = "sqlite"
@@ -81,13 +81,13 @@ def load_config() -> AppConfig:
         vllm_api_key=os.getenv("VLLM_API_KEY", "EMPTY"),
         dashscope_base_url=os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
         dashscope_api_key=os.getenv("DASHSCOPE_API_KEY"),
-        dashscope_model=os.getenv("DASHSCOPE_MODEL"),
+        dashscope_model=os.getenv("DASHSCOPE_MODEL", "qwen-plus"),
         embedding_provider=os.getenv("EMBEDDING_PROVIDER", "sentence-transformers"),
         embedding_model=os.getenv("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2"),
         vllm_embedding_base_url=os.getenv("VLLM_EMBEDDING_BASE_URL", "http://localhost:8000/v1"),
         vllm_embedding_model=os.getenv("VLLM_EMBEDDING_MODEL", "BAAI/bge-large-zh-v1.5"),
         vllm_embedding_api_key=os.getenv("VLLM_EMBEDDING_API_KEY", "EMPTY"),
-        dashscope_embedding_model=os.getenv("DASHSCOPE_EMBEDDING_MODEL"),
+        dashscope_embedding_model=os.getenv("DASHSCOPE_EMBEDDING_MODEL", "text-embedding-v3"),
         db_type=os.getenv("DB_TYPE", "sqlite"),
         db_path=os.getenv("DB_PATH", "./database/ecommerce.db"),
         db_host=os.getenv("DB_HOST", "localhost"),
