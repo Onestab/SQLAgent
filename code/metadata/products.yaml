@@ -1,0 +1,73 @@
+description: "产品表，存储所有商品信息"
+business_context: "记录电商平台的商品基本信息，包括名称、价格、库存等。每个产品属于一个类别。"
+
+# 表关联关系
+relationships:
+  - target_table: categories
+    join_type: many_to_one
+    foreign_key: category_id
+    target_key: category_id
+    description: "每个产品属于一个类别"
+  - target_table: order_items
+    join_type: one_to_many
+    foreign_key: product_id
+    target_key: product_id
+    description: "一个产品可以出现在多个订单中"
+
+# 常见JOIN路径
+common_joins:
+  - tables: [products, categories]
+    path: "products.category_id = categories.category_id"
+    use_case: "查询产品的类别信息"
+  - tables: [products, order_items, orders]
+    path: "products.product_id = order_items.product_id AND order_items.order_id = orders.order_id"
+    use_case: "查询产品的销售订单"
+  - tables: [products, order_items, orders, customers]
+    path: "products.product_id = order_items.product_id AND order_items.order_id = orders.order_id AND orders.customer_id = customers.customer_id"
+    use_case: "查询购买某产品的客户"
+
+# 业务关键词（用于关键词匹配）
+keywords:
+  - 产品
+  - 商品
+  - 货物
+  - 价格
+  - 库存
+  - 电子产品
+  - 图书
+  - 服装
+  - 食品
+
+columns:
+  - name: product_id
+    type: INTEGER
+    description: "产品唯一标识符"
+    is_primary_key: true
+  - name: product_name
+    type: TEXT
+    description: "产品名称"
+    keywords: [名称, 商品名, 产品名]
+  - name: category_id
+    type: INTEGER
+    description: "所属类别ID，关联categories表"
+    is_foreign_key: true
+    references: categories.category_id
+  - name: price
+    type: REAL
+    description: "产品价格（单位：元）"
+    keywords: [价格, 金额, 多少钱, 售价]
+  - name: stock_quantity
+    type: INTEGER
+    description: "库存数量"
+    keywords: [库存, 数量, 剩余, 还有多少]
+  - name: created_at
+    type: TIMESTAMP
+    description: "产品创建时间"
+
+example_queries:
+  - question: "查询所有电子产品"
+    sql: "SELECT p.* FROM products p JOIN categories c ON p.category_id = c.category_id WHERE c.category_name = '电子产品'"
+  - question: "查询价格大于1000元的产品"
+    sql: "SELECT * FROM products WHERE price > 1000"
+  - question: "查询库存不足50的产品"
+    sql: "SELECT product_name, stock_quantity FROM products WHERE stock_quantity < 50"

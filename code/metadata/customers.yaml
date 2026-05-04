@@ -1,0 +1,64 @@
+description: "客户表，存储客户基本信息"
+business_context: "记录平台注册用户的基本信息，包括姓名、联系方式等。"
+
+# 表关联关系
+relationships:
+  - target_table: orders
+    join_type: one_to_many
+    foreign_key: customer_id
+    target_key: customer_id
+    description: "一个客户可以有多个订单"
+
+# 常见JOIN路径
+common_joins:
+  - tables: [customers, orders]
+    path: "customers.customer_id = orders.customer_id"
+    use_case: "查询客户的订单"
+  - tables: [customers, orders, order_items]
+    path: "customers.customer_id = orders.customer_id AND orders.order_id = order_items.order_id"
+    use_case: "查询客户购买的商品明细"
+  - tables: [customers, orders, order_items, products]
+    path: "customers.customer_id = orders.customer_id AND orders.order_id = order_items.order_id AND order_items.product_id = products.product_id"
+    use_case: "查询客户购买的产品详情"
+
+# 业务关键词
+keywords:
+  - 客户
+  - 用户
+  - 买家
+  - 顾客
+  - 张三
+  - 李四
+  - 王五
+  - 注册
+  - 会员
+
+columns:
+  - name: customer_id
+    type: INTEGER
+    description: "客户唯一标识符"
+    is_primary_key: true
+  - name: customer_name
+    type: TEXT
+    description: "客户姓名"
+    keywords: [姓名, 名字, 叫什么, 谁]
+  - name: email
+    type: TEXT
+    description: "客户邮箱地址"
+    keywords: [邮箱, 邮件, email]
+  - name: phone
+    type: TEXT
+    description: "客户手机号码"
+    keywords: [手机, 电话, 联系方式]
+  - name: registration_date
+    type: TIMESTAMP
+    description: "客户注册时间"
+    keywords: [注册, 注册时间, 什么时候注册]
+
+example_queries:
+  - question: "查询所有客户信息"
+    sql: "SELECT * FROM customers"
+  - question: "根据邮箱查找客户"
+    sql: "SELECT * FROM customers WHERE email = 'zhangsan@example.com'"
+  - question: "查询2024年注册的客户数量"
+    sql: "SELECT COUNT(*) FROM customers WHERE registration_date >= '2024-01-01'"

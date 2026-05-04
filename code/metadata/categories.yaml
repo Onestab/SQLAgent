@@ -1,0 +1,46 @@
+description: "产品类别表，存储商品分类信息"
+business_context: "定义商品的分类体系，每个类别可以包含多个产品。"
+
+# 表关联关系
+relationships:
+  - target_table: products
+    join_type: one_to_many
+    foreign_key: category_id
+    target_key: category_id
+    description: "一个类别包含多个产品"
+
+# 常见JOIN路径
+common_joins:
+  - tables: [categories, products]
+    path: "categories.category_id = products.category_id"
+    use_case: "查询类别下的产品"
+
+# 业务关键词
+keywords:
+  - 类别
+  - 分类
+  - 类型
+  - 种类
+  - 电子产品
+  - 图书
+  - 服装
+  - 食品
+
+columns:
+  - name: category_id
+    type: INTEGER
+    description: "类别唯一标识符"
+    is_primary_key: true
+  - name: category_name
+    type: TEXT
+    description: "类别名称"
+    keywords: [类别, 分类, 类型]
+  - name: description
+    type: TEXT
+    description: "类别描述"
+
+example_queries:
+  - question: "查询所有商品类别"
+    sql: "SELECT * FROM categories"
+  - question: "查询电子产品类别下有多少商品"
+    sql: "SELECT COUNT(*) FROM products p JOIN categories c ON p.category_id = c.category_id WHERE c.category_name = '电子产品'"

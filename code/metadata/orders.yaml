@@ -1,0 +1,70 @@
+description: "订单表，存储客户订单信息"
+business_context: "记录客户的购买订单，包括订单时间、总金额、订单状态等。每个订单关联一个客户。"
+
+# 表关联关系
+relationships:
+  - target_table: customers
+    join_type: many_to_one
+    foreign_key: customer_id
+    target_key: customer_id
+    description: "每个订单属于一个客户"
+  - target_table: order_items
+    join_type: one_to_many
+    foreign_key: order_id
+    target_key: order_id
+    description: "一个订单包含多个订单明细"
+
+# 常见JOIN路径
+common_joins:
+  - tables: [orders, customers]
+    path: "orders.customer_id = customers.customer_id"
+    use_case: "查询订单的客户信息"
+  - tables: [orders, order_items]
+    path: "orders.order_id = order_items.order_id"
+    use_case: "查询订单包含的商品"
+  - tables: [orders, order_items, products]
+    path: "orders.order_id = order_items.order_id AND order_items.product_id = products.product_id"
+    use_case: "查询订单中的产品详情"
+
+# 业务关键词
+keywords:
+  - 订单
+  - 购买
+  - 下单
+  - 买
+  - 总额
+  - 金额
+  - 已完成
+  - 待处理
+  - 取消
+
+columns:
+  - name: order_id
+    type: INTEGER
+    description: "订单唯一标识符"
+    is_primary_key: true
+  - name: customer_id
+    type: INTEGER
+    description: "客户ID，关联customers表"
+    is_foreign_key: true
+    references: customers.customer_id
+  - name: order_date
+    type: TIMESTAMP
+    description: "订单创建时间"
+    keywords: [时间, 日期, 什么时候, 哪天]
+  - name: total_amount
+    type: REAL
+    description: "订单总金额（单位：元）"
+    keywords: [总额, 金额, 多少钱, 总价]
+  - name: status
+    type: TEXT
+    description: "订单状态：pending(待处理)、completed(已完成)、cancelled(已取消)"
+    keywords: [状态, 完成, 待处理, 取消]
+
+example_queries:
+  - question: "查询张三的所有订单"
+    sql: "SELECT o.* FROM orders o JOIN customers c ON o.customer_id = c.customer_id WHERE c.customer_name = '张三'"
+  - question: "查询2024年1月的订单总额"
+    sql: "SELECT SUM(total_amount) as total FROM orders WHERE order_date >= '2024-01-01' AND order_date < '2024-02-01'"
+  - question: "查询已完成的订单数量"
+    sql: "SELECT COUNT(*) as completed_orders FROM orders WHERE status = 'completed'"

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs ls *)",
+      "Bash(python -m py_compile agent/nodes.py)",
+      "Bash(python -m py_compile tools/metadata_tools.py)",
+      "Bash(python -m py_compile config.py)",
+      "Bash(python -m py_compile tools/__init__.py)"
+    ]
+  }
+}

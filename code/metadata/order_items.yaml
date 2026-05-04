@@ -1,0 +1,66 @@
+description: "订单明细表，存储订单中的商品详情"
+business_context: "记录每个订单包含的具体商品、数量和价格。一个订单可以包含多个商品。"
+
+# 表关联关系
+relationships:
+  - target_table: orders
+    join_type: many_to_one
+    foreign_key: order_id
+    target_key: order_id
+    description: "每个订单明细属于一个订单"
+  - target_table: products
+    join_type: many_to_one
+    foreign_key: product_id
+    target_key: product_id
+    description: "每个订单明细关联一个产品"
+
+# 常见JOIN路径
+common_joins:
+  - tables: [order_items, orders]
+    path: "order_items.order_id = orders.order_id"
+    use_case: "查询订单明细的订单信息"
+  - tables: [order_items, products]
+    path: "order_items.product_id = products.product_id"
+    use_case: "查询订单明细的产品信息"
+  - tables: [order_items, orders, customers]
+    path: "order_items.order_id = orders.order_id AND orders.customer_id = customers.customer_id"
+    use_case: "查询购买商品的客户"
+
+# 业务关键词
+keywords:
+  - 订单明细
+  - 购买明细
+  - 商品明细
+  - 数量
+  - 销量
+  - 单价
+
+columns:
+  - name: order_item_id
+    type: INTEGER
+    description: "订单明细唯一标识符"
+    is_primary_key: true
+  - name: order_id
+    type: INTEGER
+    description: "订单ID，关联orders表"
+    is_foreign_key: true
+    references: orders.order_id
+  - name: product_id
+    type: INTEGER
+    description: "产品ID，关联products表"
+    is_foreign_key: true
+    references: products.product_id
+  - name: quantity
+    type: INTEGER
+    description: "购买数量"
+    keywords: [数量, 买了多少, 几个, 销量]
+  - name: unit_price
+    type: REAL
+    description: "单价（单位：元）"
+    keywords: [单价, 价格]
+
+example_queries:
+  - question: "查询订单1包含的所有商品"
+    sql: "SELECT p.product_name, oi.quantity, oi.unit_price FROM order_items oi JOIN products p ON oi.product_id = p.product_id WHERE oi.order_id = 1"
+  - question: "查询iPhone 15的总销量"
+    sql: "SELECT SUM(oi.quantity) as total_sold FROM order_items oi JOIN products p ON oi.product_id = p.product_id WHERE p.product_name = 'iPhone 15'"
