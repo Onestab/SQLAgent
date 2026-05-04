@@ -10,6 +10,10 @@ import sqlparse
 from typing import Any
 from tools import ALL_TOOLS
 import re
+import os
+
+# 从环境变量或配置读取是否显示详细输出
+SHOW_AGENTIC_PROCESS = os.getenv("SHOW_AGENTIC_PROCESS", "false").lower() == "true"
 
 
 def intent_recognition_node(state: AgentState) -> dict[str, Any]:
@@ -92,6 +96,14 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
 
 请开始检索，最后以"找到的相关表: [表1, 表2, ...]"的格式总结。"""
 
+    if SHOW_AGENTIC_PROCESS:
+        print("\n" + "="*60)
+        print("AgenticRAG Schema检索过程")
+        print("="*60)
+        print(f"用户问题: {user_query}")
+        print(f"用户意图: {intent}")
+        print("-"*60)
+
     # 创建ReAct Agent
     react_agent = create_react_agent(model=llm, tools=ALL_TOOLS)
 
@@ -102,13 +114,24 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
 
     # 从Agent的响应中提取找到的表名
     agent_messages = result.get("messages", [])
+
+    if SHOW_AGENTIC_PROCESS:
+        print("\nAgent检索过程:")
+        for i, msg in enumerate(agent_messages):
+            if hasattr(msg, 'content') and msg.content:
+                print(f"\n[步骤 {i+1}] {msg.__class__.__name__}:")
+                print(msg.content[:200] + "..." if len(msg.content) > 200 else msg.content)
+            if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                for tool_call in msg.tool_calls:
+                    print(f"  → 调用工具: {tool_call.get('name', 'unknown')}")
+                    print(f"    参数: {tool_call.get('args', {})}")
+
     final_message = agent_messages[-1].content if agent_messages else ""
 
     # 解析Agent找到的表名列表
     relevant_tables = []
 
     # 尝试从最后的消息中提取表名
-    import re
     # 匹配 "找到的相关表: [...]" 或类似格式
     table_pattern = r'找到的相关表[：:]\s*\[([^\]]+)\]'
     match = re.search(table_pattern, final_message)
@@ -137,7 +160,8 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
 
     # 如果Agent没有找到表，回退到传统检索
     if not relevant_tables:
-        print("Agent未找到表，使用传统检索方法")
+        if SHOW_AGENTIC_PROCESS:
+            print("\n⚠️  Agent未找到表，使用传统检索方法")
         from database.metadata import metadata_manager
         relevant_tables = metadata_manager.search_relevant_tables(user_query, top_k=3)
 
@@ -150,7 +174,10 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
     from database.metadata import metadata_manager
     schema_context = metadata_manager.get_schema_context(relevant_tables, include_examples=True)
 
-    print(f"AgenticRAG找到的相关表: {relevant_tables}")
+    if SHOW_AGENTIC_PROCESS:
+        print("\n" + "-"*60)
+        print(f"✓ 最终找到的相关表: {relevant_tables}")
+        print("="*60 + "\n")
 
     return {
         "relevant_tables": relevant_tables,

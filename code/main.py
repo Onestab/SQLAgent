@@ -6,6 +6,7 @@ import uuid
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
+from rich.table import Table
 from agent.graph import compiled_graph
 from agent.state import AgentState
 from database.connection import initialize_demo_db
@@ -13,9 +14,25 @@ from config import config
 
 console = Console()
 
+# 全局配置
+VERBOSE_CONFIG = {
+    "show_intent": False,
+    "show_schema_linking": False,
+    "show_agentic_process": False,
+    "show_validation": False,
+    "show_retry": False,
+    "show_execution_details": False
+}
 
-def run_query(user_query: str, session_id: str = None) -> dict:
-    """运行单个查询"""
+
+def run_query(user_query: str, session_id: str = None, verbose: bool = False) -> dict:
+    """运行单个查询
+
+    Args:
+        user_query: 用户查询
+        session_id: 会话ID
+        verbose: 是否显示详细的中间过程
+    """
     if session_id is None:
         session_id = str(uuid.uuid4())
 
@@ -36,16 +53,56 @@ def run_query(user_query: str, session_id: str = None) -> dict:
         "llm_messages": []
     }
 
+    if verbose or VERBOSE_CONFIG["show_agentic_process"]:
+        console.print("[dim]开始执行查询流程...[/dim]")
+
     # 执行图
     result = compiled_graph.invoke(initial_state)
+
+    # 显示中间过程
+    if verbose or VERBOSE_CONFIG["show_intent"]:
+        if result.get("intent"):
+            console.print(Panel(
+                result["intent"],
+                title="[bold cyan]意图识别[/bold cyan]",
+                border_style="cyan"
+            ))
+
+    if verbose or VERBOSE_CONFIG["show_schema_linking"]:
+        if result.get("relevant_tables"):
+            table = Table(title="相关表识别", show_header=True, header_style="bold magenta")
+            table.add_column("表名", style="cyan")
+            for tbl in result["relevant_tables"]:
+                table.add_row(tbl)
+            console.print(table)
+
+    if verbose or VERBOSE_CONFIG["show_validation"]:
+        if result.get("sql_validation_result"):
+            console.print(f"[dim]SQL验证: {result['sql_validation_result']}[/dim]")
+
+    if verbose or VERBOSE_CONFIG["show_retry"]:
+        if result.get("retry_count", 0) > 0:
+            console.print(f"[yellow]重试次数: {result['retry_count']}[/yellow]")
+            if result.get("execution_error"):
+                console.print(f"[yellow]错误信息: {result['execution_error']}[/yellow]")
+
+    if verbose or VERBOSE_CONFIG["show_execution_details"]:
+        if result.get("query_results"):
+            console.print(f"[dim]执行成功，返回 {len(result['query_results'])} 条记录[/dim]")
+
     return result
 
 
-def interactive_mode():
-    """交互式问答模式"""
+def interactive_mode(verbose: bool = False):
+    """交互式问答模式
+
+    Args:
+        verbose: 是否显示详细的中间过程
+    """
     console.print(Panel.fit(
         "[bold cyan]SQLAgent - 智能问数系统[/bold cyan]\n"
         "基于LangGraph的Text-to-SQL系统\n"
+        f"详细模式: {'开启' if verbose else '关闭'}\n"
         "输入 'exit' 或 'quit' 退出",
         border_style="cyan"
     ))
@@ -65,7 +122,7 @@ def interactive_mode():
 
             console.print("\n[dim]正在处理您的查询...[/dim]\n")
 
-            result = run_query(user_input, session_id)
+            result = run_query(user_input, session_id, verbose=verbose)
             # 显示闲聊回复
             if result.get("chat_mode") == "common":
                 console.print(Panel(
@@ -118,8 +175,37 @@ def main():
     parser.add_argument("--init-db", action="store_true", help="初始化演示数据库")
     parser.add_argument("--query", type=str, help="直接执行查询")
     parser.add_argument("--interactive", action="store_true", help="交互式模式")
+    parser.add_argument("-v", "--verbose", action="store_true", help="显示详细的中间过程（意图识别、Schema链接、验证、重试等）")
+    parser.add_argument("--show-intent", action="store_true", help="显示意图识别结果")
+    parser.add_argument("--show-schema", action="store_true", help="显示Schema链接过程")
+    parser.add_argument("--show-agentic", action="store_true", help="显示AgenticRAG的检索过程")
+    parser.add_argument("--show-validation", action="store_true", help="显示SQL验证结果")
+    parser.add_argument("--show-retry", action="store_true", help="显示错误重试过程")
+    parser.add_argument("--show-execution", action="store_true", help="显示SQL执行详情")
 
     args = parser.parse_args()
+
+    # 设置详细输出配置
+    if args.verbose:
+        VERBOSE_CONFIG["show_intent"] = True
+        VERBOSE_CONFIG["show_schema_linking"] = True
+        VERBOSE_CONFIG["show_agentic_process"] = True
+        VERBOSE_CONFIG["show_validation"] = True
+        VERBOSE_CONFIG["show_retry"] = True
+        VERBOSE_CONFIG["show_execution_details"] = True
+    else:
+        if args.show_intent:
+            VERBOSE_CONFIG["show_intent"] = True
+        if args.show_schema:
+            VERBOSE_CONFIG["show_schema_linking"] = True
+        if args.show_agentic:
+            VERBOSE_CONFIG["show_agentic_process"] = True
+        if args.show_validation:
+            VERBOSE_CONFIG["show_validation"] = True
+        if args.show_retry:
+            VERBOSE_CONFIG["show_retry"] = True
+        if args.show_execution:
+            VERBOSE_CONFIG["show_execution_details"] = True
 
     if args.init_db:
         console.print("[cyan]正在初始化演示数据库...[/cyan]")
@@ -128,7 +214,7 @@ def main():
         return
 
     if args.query:
-        result = run_query(args.query)
+        result = run_query(args.query, verbose=args.verbose)
         console.print(Panel(
             result.get("final_answer", "无结果"),
             title="[bold green]回答[/bold green]",
@@ -139,7 +225,7 @@ def main():
         return
 
     # 默认进入交互式模式
-    interactive_mode()
+    interactive_mode(verbose=args.verbose)
 
 
 if __name__ == "__main__":
