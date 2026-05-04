@@ -81,7 +81,7 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
 用户意图: {intent}
 
 你需要：
-1. 使用search_relevant_tables工具搜索与问题相关的表
+1. 使用search_relevant_tables工具搜索与问题相关的表， 可根据需求适当修改query内容
 2. 对于找到的每个表，使用get_related_tables工具查找其关联表
 3. 使用get_table_metadata或get_schema_context获取详细的Schema信息
 4. 判断是否已经找到回答问题所需的所有表，如果不够完整，继续搜索
