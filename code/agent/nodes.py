@@ -4,14 +4,12 @@ LangGraph节点实现
 """
 from agent.state import AgentState
 from config import get_llm
-from database.metadata import metadata_manager
 from database.connection import list_tables_sync, get_table_schema_sync, execute_query_sync
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 import sqlparse
 from typing import Any
-from langgraph.checkpoint.sqlite import SqliteSaver
-from langgraph.prebuilt import create_react_agent
 from tools import ALL_TOOLS
+import re
 
 
 def intent_recognition_node(state: AgentState) -> dict[str, Any]:
@@ -159,27 +157,6 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
         "schema_context": schema_context,
         "llm_messages": [AIMessage(content=f"通过智能检索找到相关表: {', '.join(relevant_tables)}")]
     }
-
-def schema_linking_node(state: AgentState) -> dict[str, Any]:
-    """模式链接节点：识别相关表和列"""
-    user_query = state["user_query"]
-    intent = state["intent"]
-
-    # 使用向量检索找到相关表
-    relevant_tables = metadata_manager.search_relevant_tables(user_query, top_k=3)
-
-    # 如果没有找    到相关表，使用所有表
-    if not relevant_tables:
-        relevant_tables = list_tables_sync()[:3]
-
-    # 生成schema上下文
-    schema_context = metadata_manager.get_schema_context(relevant_tables, include_examples=True)
-
-    return {
-        "relevant_tables": relevant_tables,
-        "schema_context": schema_context
-    }
-
 
 def sql_generation_node(state: AgentState) -> dict[str, Any]:
     """SQL生成节点：基于意图和schema生成SQL"""

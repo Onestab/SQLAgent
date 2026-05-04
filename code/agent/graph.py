@@ -9,7 +9,7 @@ from agent.state import AgentState
 from agent.nodes import (
     intent_recognition_node,
     common_chat_node,
-    schema_linking_node,
+    agentic_schema_linking_node,
     sql_generation_node,
     sql_validation_node,
     sql_execution_node,
@@ -27,11 +27,11 @@ def should_retry(state: AgentState) -> Literal["sql_generation", "error_handler"
     return "result_interpretation"
 
 
-def need_sql_chat(state: AgentState) -> Literal["schema_linking", "common_chat"]:
+def need_sql_chat(state: AgentState) -> Literal["agentic_schema_linking", "common_chat"]:
     """判断对话是普通对话还是SQL问答"""
     if state.get("chat_mode") == "common":
         return "common_chat"
-    return "schema_linking"
+    return "agentic_schema_linking"
 
 def build_graph() -> StateGraph:
     """构建LangGraph工作流"""
@@ -40,7 +40,7 @@ def build_graph() -> StateGraph:
     # 添加节点
     workflow.add_node("intent_recognition", intent_recognition_node)
     workflow.add_node("common_chat", common_chat_node)
-    workflow.add_node("schema_linking", schema_linking_node)
+    workflow.add_node("agentic_schema_linking", agentic_schema_linking_node)
     workflow.add_node("sql_generation", sql_generation_node)
     workflow.add_node("sql_validation", sql_validation_node)
     workflow.add_node("sql_execution", sql_execution_node)
@@ -51,16 +51,15 @@ def build_graph() -> StateGraph:
     workflow.set_entry_point("intent_recognition")
 
     # 添加边
-    # workflow.add_edge("intent_recognition", "schema_linking")
     workflow.add_conditional_edges(
         "intent_recognition",
         need_sql_chat,
         {
-            "schema_linking": "schema_linking",
+            "agentic_schema_linking": "agentic_schema_linking",
             "common_chat": "common_chat"
         }
     )
-    workflow.add_edge("schema_linking", "sql_generation")
+    workflow.add_edge("agentic_schema_linking", "sql_generation")
     workflow.add_edge("sql_generation", "sql_validation")
     workflow.add_edge("sql_validation", "sql_execution")
 
