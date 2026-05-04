@@ -107,11 +107,12 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
     # 创建ReAct Agent
     react_agent = create_react_agent(model=llm, tools=ALL_TOOLS)
 
+    print("创建ReACT成功，开始查询")
     # 调用Agent进行多轮检索
-    result = react_agent.invoke({
-        "messages": [SystemMessage(content=system_prompt)]
-    })
-
+    result = react_agent.invoke(input={
+        "messages": [SystemMessage(content=system_prompt)],
+    },debug=True)
+    print("ReACT查询成功")
     # 从Agent的响应中提取找到的表名
     agent_messages = result.get("messages", [])
 
