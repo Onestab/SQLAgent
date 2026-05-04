@@ -1,0 +1,85 @@
+description: "客户优惠券关联表，记录客户领取和使用优惠券的情况"
+business_context: "记录客户与优惠券的关联关系，包括领取时间、使用时间、使用状态等，用于优惠券管理和营销分析。"
+
+# 表关联关系
+relationships:
+  - target_table: customers
+    join_type: many_to_one
+    foreign_key: customer_id
+    target_key: customer_id
+    description: "每条记录关联一个客户"
+  - target_table: coupons
+    join_type: many_to_one
+    foreign_key: coupon_id
+    target_key: coupon_id
+    description: "每条记录关联一个优惠券"
+  - target_table: orders
+    join_type: many_to_one
+    foreign_key: order_id
+    target_key: order_id
+    description: "使用优惠券的订单"
+
+# 常见JOIN路径
+common_joins:
+  - tables: [customer_coupons, customers]
+    path: "customer_coupons.customer_id = customers.customer_id"
+    use_case: "查询客户的优惠券"
+  - tables: [customer_coupons, coupons]
+    path: "customer_coupons.coupon_id = coupons.coupon_id"
+    use_case: "查询优惠券的领取情况"
+  - tables: [customer_coupons, customers, coupons]
+    path: "customer_coupons.customer_id = customers.customer_id AND customer_coupons.coupon_id = coupons.coupon_id"
+    use_case: "查询客户领取的优惠券详情"
+  - tables: [customer_coupons, orders]
+    path: "customer_coupons.order_id = orders.order_id"
+    use_case: "查询优惠券使用的订单"
+
+# 业务关键词
+keywords:
+  - 客户优惠券
+  - 领取
+  - 使用
+  - 优惠券状态
+  - 已使用
+  - 未使用
+
+columns:
+  - name: id
+    type: INTEGER
+    description: "记录唯一标识符"
+    is_primary_key: true
+  - name: customer_id
+    type: INTEGER
+    description: "客户ID，关联customers表"
+    is_foreign_key: true
+    references: customers.customer_id
+  - name: coupon_id
+    type: INTEGER
+    description: "优惠券ID，关联coupons表"
+    is_foreign_key: true
+    references: coupons.coupon_id
+  - name: received_at
+    type: TIMESTAMP
+    description: "领取时间"
+    keywords: [领取时间, 获得时间]
+  - name: used_at
+    type: TIMESTAMP
+    description: "使用时间"
+    keywords: [使用时间, 消费时间]
+  - name: order_id
+    type: INTEGER
+    description: "使用优惠券的订单ID"
+    is_foreign_key: true
+    references: orders.order_id
+  - name: status
+    type: TEXT
+    description: "状态（unused未使用/used已使用/expired已过期）"
+    keywords: [状态, 是否使用]
+
+example_queries:
+  - question: "查询张三未使用的优惠券"
+    sql: "SELECT cc.*, c.coupon_name, c.discount_value FROM customer_coupons cc JOIN customers cu ON cc.customer_id = cu.customer_id JOIN coupons c ON cc.coupon_id = c.coupon_id WHERE cu.customer_name = '张三' AND cc.status = 'unused'"
+  - question: "查询VIP100优惠券的使用情况"
+    sql: "SELECT c.coupon_name, COUNT(cc.id) as total_received, SUM(CASE WHEN cc.status = 'used' THEN 1 ELSE 0 END) as used_count FROM coupons c LEFT JOIN customer_coupons cc ON c.coupon_id = cc.coupon_id WHERE c.coupon_code = 'VIP100' GROUP BY c.coupon_id, c.coupon_name"
+  - question: "查询最近30天领取优惠券最多的客户"
+    sql: "SELECT cu.customer_name, COUNT(cc.id) as coupon_count FROM customers cu JOIN customer_coupons cc ON cu.customer_id = cc.customer_id WHERE cc.received_at >= datetime('now', '-30 days') GROUP BY cu.customer_id, cu.customer_name ORDER BY coupon_count DESC LIMIT 10"

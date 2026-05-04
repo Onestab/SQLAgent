@@ -1,0 +1,72 @@
+description: "购物车表，存储客户的购物车商品"
+business_context: "记录客户添加到购物车但尚未下单的商品，用于购物车管理和购买转化分析。"
+
+# 表关联关系
+relationships:
+  - target_table: customers
+    join_type: many_to_one
+    foreign_key: customer_id
+    target_key: customer_id
+    description: "每个购物车项属于一个客户"
+  - target_table: products
+    join_type: many_to_one
+    foreign_key: product_id
+    target_key: product_id
+    description: "每个购物车项关联一个产品"
+
+# 常见JOIN路径
+common_joins:
+  - tables: [shopping_cart, customers]
+    path: "shopping_cart.customer_id = customers.customer_id"
+    use_case: "查询客户的购物车"
+  - tables: [shopping_cart, products]
+    path: "shopping_cart.product_id = products.product_id"
+    use_case: "查询购物车中的产品信息"
+  - tables: [shopping_cart, customers, products]
+    path: "shopping_cart.customer_id = customers.customer_id AND shopping_cart.product_id = products.product_id"
+    use_case: "查询客户购物车的完整信息"
+  - tables: [shopping_cart, products, categories]
+    path: "shopping_cart.product_id = products.product_id AND products.category_id = categories.category_id"
+    use_case: "查询购物车中各类别的商品"
+
+# 业务关键词
+keywords:
+  - 购物车
+  - 待购
+  - 加购
+  - 购物篮
+  - 未结算
+
+columns:
+  - name: cart_id
+    type: INTEGER
+    description: "购物车项唯一标识符"
+    is_primary_key: true
+  - name: customer_id
+    type: INTEGER
+    description: "客户ID，关联customers表"
+    is_foreign_key: true
+    references: customers.customer_id
+  - name: product_id
+    type: INTEGER
+    description: "产品ID，关联products表"
+    is_foreign_key: true
+    references: products.product_id
+  - name: quantity
+    type: INTEGER
+    description: "商品数量"
+    keywords: [数量, 件数]
+  - name: added_at
+    type: TIMESTAMP
+    description: "添加时间"
+    keywords: [添加时间, 加购时间]
+
+example_queries:
+  - question: "查询王五的购物车"
+    sql: "SELECT sc.*, p.product_name, p.price, sc.quantity * p.price as subtotal FROM shopping_cart sc JOIN customers c ON sc.customer_id = c.customer_id JOIN products p ON sc.product_id = p.product_id WHERE c.customer_name = '王五'"
+  - question: "查询购物车中电子产品的数量"
+    sql: "SELECT cat.category_name, COUNT(sc.cart_id) as item_count, SUM(sc.quantity) as total_quantity FROM shopping_cart sc JOIN products p ON sc.product_id = p.product_id JOIN categories cat ON p.category_id = cat.category_id WHERE cat.category_name = '电子产品' GROUP BY cat.category_id, cat.category_name"
+  - question: "查询购物车总金额最高的客户"
+    sql: "SELECT c.customer_name, SUM(sc.quantity * p.price) as cart_total FROM customers c JOIN shopping_cart sc ON c.customer_id = sc.customer_id JOIN products p ON sc.product_id = p.product_id GROUP BY c.customer_id, c.customer_name ORDER BY cart_total DESC LIMIT 10"
+  - question: "查询超过7天未结算的购物车商品"
+    sql: "SELECT c.customer_name, p.product_name, sc.quantity, sc.added_at FROM shopping_cart sc JOIN customers c ON sc.customer_id = c.customer_id JOIN products p ON sc.product_id = p.product_id WHERE sc.added_at < datetime('now', '-7 days')"
