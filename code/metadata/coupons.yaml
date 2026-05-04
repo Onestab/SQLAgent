@@ -1,0 +1,87 @@
+description: "优惠券表，存储平台发放的优惠券信息"
+business_context: "记录电商平台的各类优惠券，包括满减券、折扣券等。优惠券可以分配给客户使用。"
+
+# 表关联关系
+relationships:
+  - target_table: customer_coupons
+    join_type: one_to_many
+    foreign_key: coupon_id
+    target_key: coupon_id
+    description: "一个优惠券可以分配给多个客户"
+
+# 常见JOIN路径
+common_joins:
+  - tables: [coupons, customer_coupons]
+    path: "coupons.coupon_id = customer_coupons.coupon_id"
+    use_case: "查询优惠券的使用情况"
+  - tables: [coupons, customer_coupons, customers]
+    path: "coupons.coupon_id = customer_coupons.coupon_id AND customer_coupons.customer_id = customers.customer_id"
+    use_case: "查询领取某优惠券的客户"
+
+# 业务关键词
+keywords:
+  - 优惠券
+  - 折扣券
+  - 满减
+  - 优惠
+  - 折扣
+  - 促销
+  - 代金券
+
+columns:
+  - name: coupon_id
+    type: INTEGER
+    description: "优惠券唯一标识符"
+    is_primary_key: true
+  - name: coupon_code
+    type: TEXT
+    description: "优惠券代码"
+    keywords: [优惠码, 券码, 代码]
+  - name: coupon_name
+    type: TEXT
+    description: "优惠券名称"
+    keywords: [名称, 券名]
+  - name: discount_type
+    type: TEXT
+    description: "折扣类型（fixed固定金额/percentage百分比）"
+    keywords: [折扣类型, 优惠类型]
+  - name: discount_value
+    type: REAL
+    description: "折扣值（固定金额或折扣比例）"
+    keywords: [折扣值, 优惠金额, 折扣比例]
+  - name: min_purchase_amount
+    type: REAL
+    description: "最低消费金额"
+    keywords: [最低消费, 门槛, 满多少]
+  - name: max_discount_amount
+    type: REAL
+    description: "最大优惠金额"
+    keywords: [最大优惠, 封顶]
+  - name: start_date
+    type: TIMESTAMP
+    description: "有效期开始时间"
+    keywords: [开始时间, 生效时间]
+  - name: end_date
+    type: TIMESTAMP
+    description: "有效期结束时间"
+    keywords: [结束时间, 过期时间, 有效期]
+  - name: total_quantity
+    type: INTEGER
+    description: "发行总量"
+    keywords: [总量, 发行量]
+  - name: used_quantity
+    type: INTEGER
+    description: "已使用数量"
+    keywords: [已使用, 使用量]
+  - name: status
+    type: TEXT
+    description: "状态（active有效/expired过期/disabled禁用）"
+    keywords: [状态, 是否有效]
+
+example_queries:
+  - question: "查询当前有效的优惠券"
+    sql: "SELECT * FROM coupons WHERE status = 'active' AND date('now') BETWEEN date(start_date) AND date(end_date)"
+  - question: "查询满500减100的优惠券"
+    sql: "SELECT * FROM coupons WHERE discount_type = 'fixed' AND discount_value = 100 AND min_purchase_amount = 500"
+  - question: "查询使用率最高的优惠券"
+    sql: "SELECT coupon_name, used_quantity, total_quantity, CAST(used_quantity AS REAL) / total_quantity * 100 as usage_rate FROM coupons WHERE total_quantity > 0 ORDER BY usage_rate DESC"

@@ -1,0 +1,79 @@
+description: "支付记录表，存储订单的支付信息"
+business_context: "记录订单的支付详情，包括支付方式、支付金额、支付状态、交易流水号等，用于财务对账和支付管理。"
+
+# 表关联关系
+relationships:
+  - target_table: orders
+    join_type: many_to_one
+    foreign_key: order_id
+    target_key: order_id
+    description: "每条支付记录关联一个订单"
+
+# 常见JOIN路径
+common_joins:
+  - tables: [payments, orders]
+    path: "payments.order_id = orders.order_id"
+    use_case: "查询订单的支付信息"
+  - tables: [payments, orders, customers]
+    path: "payments.order_id = orders.order_id AND orders.customer_id = customers.customer_id"
+    use_case: "查询客户的支付记录"
+  - tables: [payments, orders, order_items, products]
+    path: "payments.order_id = orders.order_id AND orders.order_id = order_items.order_id AND order_items.product_id = products.product_id"
+    use_case: "查询支付记录对应的商品"
+
+# 业务关键词
+keywords:
+  - 支付
+  - 付款
+  - 交易
+  - 支付宝
+  - 微信支付
+  - 支付方式
+  - 支付状态
+  - 流水号
+
+columns:
+  - name: payment_id
+    type: INTEGER
+    description: "支付记录唯一标识符"
+    is_primary_key: true
+  - name: order_id
+    type: INTEGER
+    description: "订单ID，关联orders表"
+    is_foreign_key: true
+    references: orders.order_id
+  - name: payment_method
+    type: TEXT
+    description: "支付方式（alipay支付宝/wechat微信/bank银行卡）"
+    keywords: [支付方式, 付款方式, 支付宝, 微信]
+  - name: payment_amount
+    type: REAL
+    description: "支付金额"
+    keywords: [支付金额, 付款金额, 金额]
+  - name: payment_status
+    type: TEXT
+    description: "支付状态（pending待支付/completed已完成/failed失败/refunded已退款）"
+    keywords: [支付状态, 付款状态, 状态]
+  - name: transaction_id
+    type: TEXT
+    description: "第三方交易流水号"
+    keywords: [流水号, 交易号, 订单号]
+  - name: paid_at
+    type: TIMESTAMP
+    description: "支付完成时间"
+    keywords: [支付时间, 付款时间]
+  - name: created_at
+    type: TIMESTAMP
+    description: "创建时间"
+
+example_queries:
+  - question: "查询支付宝支付的订单"
+    sql: "SELECT p.*, o.order_id, o.total_amount FROM payments p JOIN orders o ON p.order_id = o.order_id WHERE p.payment_method = 'alipay' AND p.payment_status = 'completed'"
+  - question: "查询待支付的订单"
+    sql: "SELECT o.order_id, c.customer_name, o.total_amount, p.payment_status FROM orders o JOIN customers c ON o.customer_id = c.customer_id JOIN payments p ON o.order_id = p.order_id WHERE p.payment_status = 'pending'"
+  - question: "统计每种支付方式的交易金额"
+    sql: "SELECT payment_method, COUNT(payment_id) as transaction_count, SUM(payment_amount) as total_amount FROM payments WHERE payment_status = 'completed' GROUP BY payment_method"
+  - question: "查询张三的所有支付记录"
+    sql: "SELECT p.*, o.order_date FROM payments p JOIN orders o ON p.order_id = o.order_id JOIN customers c ON o.customer_id = c.customer_id WHERE c.customer_name = '张三' ORDER BY p.created_at DESC"
+  - question: "查询今天的支付总额"
+    sql: "SELECT SUM(payment_amount) as today_total FROM payments WHERE payment_status = 'completed' AND date(paid_at) = date('now')"

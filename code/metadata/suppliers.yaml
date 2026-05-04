@@ -1,0 +1,65 @@
+description: "供应商表，存储产品供应商信息"
+business_context: "记录为电商平台提供商品的供应商基本信息，包括联系方式、地址等。每个产品关联一个供应商。"
+
+# 表关联关系
+relationships:
+  - target_table: products
+    join_type: one_to_many
+    foreign_key: supplier_id
+    target_key: supplier_id
+    description: "一个供应商可以提供多个产品"
+
+# 常见JOIN路径
+common_joins:
+  - tables: [suppliers, products]
+    path: "suppliers.supplier_id = products.supplier_id"
+    use_case: "查询供应商提供的产品"
+  - tables: [suppliers, products, categories]
+    path: "suppliers.supplier_id = products.supplier_id AND products.category_id = categories.category_id"
+    use_case: "查询供应商提供的各类别产品"
+
+# 业务关键词
+keywords:
+  - 供应商
+  - 厂商
+  - 供货商
+  - 提供商
+  - 联系人
+  - 联系方式
+
+columns:
+  - name: supplier_id
+    type: INTEGER
+    description: "供应商唯一标识符"
+    is_primary_key: true
+  - name: supplier_name
+    type: TEXT
+    description: "供应商名称"
+    keywords: [供应商名称, 厂商名, 公司名]
+  - name: contact_person
+    type: TEXT
+    description: "联系人姓名"
+    keywords: [联系人, 负责人]
+  - name: phone
+    type: TEXT
+    description: "联系电话"
+    keywords: [电话, 手机, 联系方式]
+  - name: email
+    type: TEXT
+    description: "电子邮箱"
+    keywords: [邮箱, email]
+  - name: address
+    type: TEXT
+    description: "供应商地址"
+    keywords: [地址, 位置, 所在地]
+  - name: created_at
+    type: TIMESTAMP
+    description: "创建时间"
+
+example_queries:
+  - question: "查询苹果供应商的联系方式"
+    sql: "SELECT supplier_name, contact_person, phone, email FROM suppliers WHERE supplier_name LIKE '%苹果%'"
+  - question: "查询深圳的供应商"
+    sql: "SELECT * FROM suppliers WHERE address LIKE '%深圳%'"
+  - question: "查询每个供应商提供的产品数量"
+    sql: "SELECT s.supplier_name, COUNT(p.product_id) as product_count FROM suppliers s LEFT JOIN products p ON s.supplier_id = p.supplier_id GROUP BY s.supplier_id, s.supplier_name"

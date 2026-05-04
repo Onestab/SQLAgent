@@ -1,0 +1,86 @@
+description: "地址表，存储客户的收货地址信息"
+business_context: "记录客户的收货地址，支持多地址管理。每个客户可以有多个地址，其中一个可设为默认地址。"
+
+# 表关联关系
+relationships:
+  - target_table: customers
+    join_type: many_to_one
+    foreign_key: customer_id
+    target_key: customer_id
+    description: "每个地址属于一个客户"
+  - target_table: orders
+    join_type: one_to_many
+    foreign_key: address_id
+    target_key: address_id
+    description: "一个地址可以用于多个订单"
+
+# 常见JOIN路径
+common_joins:
+  - tables: [addresses, customers]
+    path: "addresses.customer_id = customers.customer_id"
+    use_case: "查询客户的所有地址"
+  - tables: [addresses, orders]
+    path: "addresses.address_id = orders.address_id"
+    use_case: "查询订单的收货地址"
+  - tables: [orders, addresses, customers]
+    path: "orders.address_id = addresses.address_id AND addresses.customer_id = customers.customer_id"
+    use_case: "查询订单的客户和收货地址"
+
+# 业务关键词
+keywords:
+  - 地址
+  - 收货地址
+  - 配送地址
+  - 收件人
+  - 省市区
+  - 默认地址
+
+columns:
+  - name: address_id
+    type: INTEGER
+    description: "地址唯一标识符"
+    is_primary_key: true
+  - name: customer_id
+    type: INTEGER
+    description: "客户ID，关联customers表"
+    is_foreign_key: true
+    references: customers.customer_id
+  - name: receiver_name
+    type: TEXT
+    description: "收件人姓名"
+    keywords: [收件人, 收货人, 姓名]
+  - name: phone
+    type: TEXT
+    description: "收件人电话"
+    keywords: [电话, 手机, 联系方式]
+  - name: province
+    type: TEXT
+    description: "省份"
+    keywords: [省, 省份]
+  - name: city
+    type: TEXT
+    description: "城市"
+    keywords: [市, 城市]
+  - name: district
+    type: TEXT
+    description: "区县"
+    keywords: [区, 县, 区县]
+  - name: detail_address
+    type: TEXT
+    description: "详细地址"
+    keywords: [详细地址, 街道, 门牌号]
+  - name: is_default
+    type: INTEGER
+    description: "是否为默认地址（0否1是）"
+    keywords: [默认, 默认地址]
+  - name: created_at
+    type: TIMESTAMP
+    description: "创建时间"
+
+example_queries:
+  - question: "查询张三的默认收货地址"
+    sql: "SELECT a.* FROM addresses a JOIN customers c ON a.customer_id = c.customer_id WHERE c.customer_name = '张三' AND a.is_default = 1"
+  - question: "查询深圳市的所有收货地址"
+    sql: "SELECT * FROM addresses WHERE city = '深圳市'"
+  - question: "查询每个客户有多少个收货地址"
+    sql: "SELECT c.customer_name, COUNT(a.address_id) as address_count FROM customers c LEFT JOIN addresses a ON c.customer_id = a.customer_id GROUP BY c.customer_id, c.customer_name"

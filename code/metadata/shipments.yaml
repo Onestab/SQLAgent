@@ -1,0 +1,86 @@
+description: "物流信息表，存储订单的配送物流信息"
+business_context: "记录订单的物流配送详情，包括快递公司、运单号、配送状态、发货时间、签收时间等，用于物流跟踪和配送管理。"
+
+# 表关联关系
+relationships:
+  - target_table: orders
+    join_type: many_to_one
+    foreign_key: order_id
+    target_key: order_id
+    description: "每条物流记录关联一个订单"
+
+# 常见JOIN路径
+common_joins:
+  - tables: [shipments, orders]
+    path: "shipments.order_id = orders.order_id"
+    use_case: "查询订单的物流信息"
+  - tables: [shipments, orders, customers]
+    path: "shipments.order_id = orders.order_id AND orders.customer_id = customers.customer_id"
+    use_case: "查询客户的物流信息"
+  - tables: [shipments, orders, addresses]
+    path: "shipments.order_id = orders.order_id AND orders.address_id = addresses.address_id"
+    use_case: "查询物流配送地址"
+  - tables: [shipments, orders, order_items, products]
+    path: "shipments.order_id = orders.order_id AND orders.order_id = order_items.order_id AND order_items.product_id = products.product_id"
+    use_case: "查询物流配送的商品"
+
+# 业务关键词
+keywords:
+  - 物流
+  - 配送
+  - 快递
+  - 运单
+  - 发货
+  - 签收
+  - 在途
+  - 顺丰
+  - 圆通
+  - 京东
+
+columns:
+  - name: shipment_id
+    type: INTEGER
+    description: "物流记录唯一标识符"
+    is_primary_key: true
+  - name: order_id
+    type: INTEGER
+    description: "订单ID，关联orders表"
+    is_foreign_key: true
+    references: orders.order_id
+  - name: tracking_number
+    type: TEXT
+    description: "快递运单号"
+    keywords: [运单号, 快递单号, 物流单号]
+  - name: carrier
+    type: TEXT
+    description: "快递公司"
+    keywords: [快递公司, 物流公司, 承运商, 顺丰, 圆通, 京东]
+  - name: shipping_status
+    type: TEXT
+    description: "配送状态（preparing备货中/in_transit运输中/delivered已送达/returned退回）"
+    keywords: [配送状态, 物流状态, 状态]
+  - name: shipped_at
+    type: TIMESTAMP
+    description: "发货时间"
+    keywords: [发货时间, 发出时间]
+  - name: delivered_at
+    type: TIMESTAMP
+    description: "签收时间"
+    keywords: [签收时间, 送达时间, 收货时间]
+  - name: created_at
+    type: TIMESTAMP
+    description: "创建时间"
+
+example_queries:
+  - question: "查询运输中的订单"
+    sql: "SELECT s.*, o.order_id, c.customer_name FROM shipments s JOIN orders o ON s.order_id = o.order_id JOIN customers c ON o.customer_id = c.customer_id WHERE s.shipping_status = 'in_transit'"
+  - question: "查询顺丰快递配送的订单"
+    sql: "SELECT s.*, o.order_id, o.total_amount FROM shipments s JOIN orders o ON s.order_id = o.order_id WHERE s.carrier = '顺丰速运'"
+  - question: "查询张三的物流信息"
+    sql: "SELECT s.*, o.order_date FROM shipments s JOIN orders o ON s.order_id = o.order_id JOIN customers c ON o.customer_id = c.customer_id WHERE c.customer_name = '张三' ORDER BY s.created_at DESC"
+  - question: "统计各快递公司的配送量"
+    sql: "SELECT carrier, COUNT(shipment_id) as shipment_count, SUM(CASE WHEN shipping_status = 'delivered' THEN 1 ELSE 0 END) as delivered_count FROM shipments WHERE carrier IS NOT NULL GROUP BY carrier"
+  - question: "查询发货后3天内送达的订单"
+    sql: "SELECT s.*, o.order_id, julianday(s.delivered_at) - julianday(s.shipped_at) as delivery_days FROM shipments s JOIN orders o ON s.order_id = o.order_id WHERE s.shipping_status = 'delivered' AND julianday(s.delivered_at) - julianday(s.shipped_at) <= 3"
+  - question: "查询待发货的订单"
+    sql: "SELECT o.order_id, c.customer_name, o.order_date, s.shipping_status FROM orders o JOIN customers c ON o.customer_id = c.customer_id JOIN shipments s ON o.order_id = s.order_id WHERE s.shipping_status = 'preparing'"

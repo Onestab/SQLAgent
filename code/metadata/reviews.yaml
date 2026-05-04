@@ -1,0 +1,87 @@
+description: "评论表，存储客户对产品的评价"
+business_context: "记录客户购买产品后的评价和评分，用于产品质量反馈和其他客户参考。"
+
+# 表关联关系
+relationships:
+  - target_table: products
+    join_type: many_to_one
+    foreign_key: product_id
+    target_key: product_id
+    description: "每条评论关联一个产品"
+  - target_table: customers
+    join_type: many_to_one
+    foreign_key: customer_id
+    target_key: customer_id
+    description: "每条评论由一个客户发表"
+  - target_table: orders
+    join_type: many_to_one
+    foreign_key: order_id
+    target_key: order_id
+    description: "评论可以关联到具体订单"
+
+# 常见JOIN路径
+common_joins:
+  - tables: [reviews, products]
+    path: "reviews.product_id = products.product_id"
+    use_case: "查询产品的所有评论"
+  - tables: [reviews, customers]
+    path: "reviews.customer_id = customers.customer_id"
+    use_case: "查询客户发表的所有评论"
+  - tables: [reviews, products, customers]
+    path: "reviews.product_id = products.product_id AND reviews.customer_id = customers.customer_id"
+    use_case: "查询产品评论及评论者信息"
+  - tables: [reviews, orders, products]
+    path: "reviews.order_id = orders.order_id AND reviews.product_id = products.product_id"
+    use_case: "查询订单相关的产品评论"
+
+# 业务关键词
+keywords:
+  - 评论
+  - 评价
+  - 评分
+  - 反馈
+  - 好评
+  - 差评
+  - 星级
+
+columns:
+  - name: review_id
+    type: INTEGER
+    description: "评论唯一标识符"
+    is_primary_key: true
+  - name: product_id
+    type: INTEGER
+    description: "产品ID，关联products表"
+    is_foreign_key: true
+    references: products.product_id
+  - name: customer_id
+    type: INTEGER
+    description: "客户ID，关联customers表"
+    is_foreign_key: true
+    references: customers.customer_id
+  - name: order_id
+    type: INTEGER
+    description: "订单ID，关联orders表"
+    is_foreign_key: true
+    references: orders.order_id
+  - name: rating
+    type: INTEGER
+    description: "评分（1-5星）"
+    keywords: [评分, 星级, 打分]
+  - name: comment
+    type: TEXT
+    description: "评论内容"
+    keywords: [评论, 评价, 内容, 反馈]
+  - name: created_at
+    type: TIMESTAMP
+    description: "评论时间"
+
+example_queries:
+  - question: "查询iPhone 15 Pro的所有评论"
+    sql: "SELECT r.*, c.customer_name FROM reviews r JOIN products p ON r.product_id = p.product_id JOIN customers c ON r.customer_id = c.customer_id WHERE p.product_name = 'iPhone 15 Pro' ORDER BY r.created_at DESC"
+  - question: "查询评分为5星的产品"
+    sql: "SELECT p.product_name, COUNT(r.review_id) as five_star_count FROM products p JOIN reviews r ON p.product_id = r.product_id WHERE r.rating = 5 GROUP BY p.product_id, p.product_name"
+  - question: "查询每个产品的平均评分"
+    sql: "SELECT p.product_name, AVG(r.rating) as avg_rating, COUNT(r.review_id) as review_count FROM products p LEFT JOIN reviews r ON p.product_id = r.product_id GROUP BY p.product_id, p.product_name"
+  - question: "查询张三发表的所有评论"
+    sql: "SELECT r.*, p.product_name FROM reviews r JOIN customers c ON r.customer_id = c.customer_id JOIN products p ON r.product_id = p.product_id WHERE c.customer_name = '张三'"

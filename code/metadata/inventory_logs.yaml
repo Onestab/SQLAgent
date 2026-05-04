@@ -1,0 +1,75 @@
+description: "库存记录表，记录产品库存变动历史"
+business_context: "记录所有产品的库存变动日志，包括入库、出库、盘点等操作，用于库存追溯和审计。"
+
+# 表关联关系
+relationships:
+  - target_table: products
+    join_type: many_to_one
+    foreign_key: product_id
+    target_key: product_id
+    description: "每条库存记录关联一个产品"
+
+# 常见JOIN路径
+common_joins:
+  - tables: [inventory_logs, products]
+    path: "inventory_logs.product_id = products.product_id"
+    use_case: "查询产品的库存变动历史"
+  - tables: [inventory_logs, products, categories]
+    path: "inventory_logs.product_id = products.product_id AND products.category_id = categories.category_id"
+    use_case: "查询某类别产品的库存变动"
+
+# 业务关键词
+keywords:
+  - 库存
+  - 库存记录
+  - 库存变动
+  - 入库
+  - 出库
+  - 盘点
+  - 库存日志
+
+columns:
+  - name: log_id
+    type: INTEGER
+    description: "日志唯一标识符"
+    is_primary_key: true
+  - name: product_id
+    type: INTEGER
+    description: "产品ID，关联products表"
+    is_foreign_key: true
+    references: products.product_id
+  - name: change_type
+    type: TEXT
+    description: "变动类型（purchase入库/sale销售/return退货/adjust调整）"
+    keywords: [变动类型, 操作类型, 入库, 出库, 销售, 退货]
+  - name: quantity_change
+    type: INTEGER
+    description: "数量变化（正数为增加，负数为减少）"
+    keywords: [数量变化, 变动数量]
+  - name: before_quantity
+    type: INTEGER
+    description: "变动前数量"
+    keywords: [变动前, 原数量]
+  - name: after_quantity
+    type: INTEGER
+    description: "变动后数量"
+    keywords: [变动后, 新数量]
+  - name: reason
+    type: TEXT
+    description: "变动原因"
+    keywords: [原因, 备注]
+  - name: operator
+    type: TEXT
+    description: "操作人"
+    keywords: [操作人, 操作员]
+  - name: created_at
+    type: TIMESTAMP
+    description: "创建时间"
+
+example_queries:
+  - question: "查询iPhone 15 Pro的库存变动历史"
+    sql: "SELECT il.*, p.product_name FROM inventory_logs il JOIN products p ON il.product_id = p.product_id WHERE p.product_name = 'iPhone 15 Pro' ORDER BY il.created_at DESC"
+  - question: "查询最近7天的销售出库记录"
+    sql: "SELECT il.*, p.product_name FROM inventory_logs il JOIN products p ON il.product_id = p.product_id WHERE il.change_type = 'sale' AND il.created_at >= datetime('now', '-7 days')"
+  - question: "统计每个产品的总入库和总出库数量"
+    sql: "SELECT p.product_name, SUM(CASE WHEN il.change_type = 'purchase' THEN il.quantity_change ELSE 0 END) as total_in, ABS(SUM(CASE WHEN il.change_type = 'sale' THEN il.quantity_change ELSE 0 END)) as total_out FROM products p LEFT JOIN inventory_logs il ON p.product_id = il.product_id GROUP BY p.product_id, p.product_name"
