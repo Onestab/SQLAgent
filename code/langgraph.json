@@ -1,0 +1,10 @@
+{
+  "graphs": {
+    "sql_agent": "./main.py:compiled_graph"
+  },
+  "env": ".env",
+  "source": {
+    "kind": "uv",
+    "root": "."
+  }
+}
