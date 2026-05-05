@@ -155,6 +155,8 @@ def list_tables_sync() -> list[str]:
         elif config.db_type == "postgresql":
             cursor.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
             tables = [row[0] for row in cursor.fetchall()]
+        else:
+            raise ValueError(f"Unsupported database type: {config.db_type}")
 
         return tables
 

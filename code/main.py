@@ -9,6 +9,7 @@ from rich.markdown import Markdown
 from rich.table import Table
 from agent.graph import compiled_graph
 from agent.state import AgentState
+from agent.nodes import set_verbose_config
 from database.connection import initialize_demo_db
 from config import config
 
@@ -206,6 +207,9 @@ def main():
             VERBOSE_CONFIG["show_retry"] = True
         if args.show_execution:
             VERBOSE_CONFIG["show_execution_details"] = True
+
+    # 将配置传递给nodes模块
+    set_verbose_config(VERBOSE_CONFIG)
 
     if args.init_db:
         console.print("[cyan]正在初始化演示数据库...[/cyan]")
