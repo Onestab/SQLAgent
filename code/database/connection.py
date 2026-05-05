@@ -16,6 +16,7 @@ class DatabaseConnection:
     @contextmanager
     def get_connection(self):
         """获取数据库连接的上下文管理器"""
+        conn = None
         try:
             if self.db_type == "sqlite":
                 conn = sqlite3.connect(config.db_path)
@@ -154,6 +155,8 @@ def list_tables_sync() -> list[str]:
         elif config.db_type == "postgresql":
             cursor.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
             tables = [row[0] for row in cursor.fetchall()]
+        else:
+            raise ValueError(f"Unsupported database type: {config.db_type}")
 
         return tables
 
