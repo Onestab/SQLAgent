@@ -92,7 +92,7 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
 重要提示：
 - 对于涉及多表关联的查询（如订单和用户、产品和订单等），务必找到所有相关联的表
 - 如果问题涉及聚合、统计，确保找到包含相关指标的表
-- 使用get_related_tables工具扩展搜索范围，避免遗漏关联表
+- 必要时使用get_related_tables工具扩展搜索范围，避免遗漏关联表
 
 请开始检索，最后以"找到的相关表: [表1, 表2, ...]"的格式总结。"""
 
@@ -107,12 +107,10 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
     # 创建ReAct Agent
     react_agent = create_react_agent(model=llm, tools=ALL_TOOLS)
 
-    print("创建ReACT成功，开始查询")
     # 调用Agent进行多轮检索
     result = react_agent.invoke(input={
         "messages": [SystemMessage(content=system_prompt)],
-    },debug=True)
-    print("ReACT查询成功")
+    },debug=False)
     # 从Agent的响应中提取找到的表名
     agent_messages = result.get("messages", [])
 

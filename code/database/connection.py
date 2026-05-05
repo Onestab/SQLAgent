@@ -16,6 +16,7 @@ class DatabaseConnection:
     @contextmanager
     def get_connection(self):
         """获取数据库连接的上下文管理器"""
+        conn = None
         try:
             if self.db_type == "sqlite":
                 conn = sqlite3.connect(config.db_path)
