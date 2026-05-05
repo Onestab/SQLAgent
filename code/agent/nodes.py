@@ -117,11 +117,7 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
     # 调用Agent进行多轮检索
     result = react_agent.invoke(input={
         "messages": [SystemMessage(content=system_prompt)],
-<<<<<<< HEAD
-    },debug=False)
-=======
     },debug=True)
->>>>>>> refs/remotes/origin/main
     # 从Agent的响应中提取找到的表名
     agent_messages = result.get("messages", [])
 
