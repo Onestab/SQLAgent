@@ -193,13 +193,25 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
 
 def sql_generation_node(state: AgentState) -> dict[str, Any]:
     """SQL生成节点：基于意图和schema生成SQL"""
+    from config import config
     llm = get_llm()
     user_query = state["user_query"]
     schema_context = state["schema_context"]
     retry_count = state.get("retry_count", 0)
     execution_error = state.get("execution_error")
 
+    # 数据库类型特定的语法提示
+    db_hints = {
+        "sqlite": "使用SQLite语法，日期函数用date()、datetime()，字符串拼接用||",
+        "mysql": "使用MySQL语法，日期函数用DATE()、NOW()，字符串拼接用CONCAT()",
+        "postgresql": "使用PostgreSQL语法，日期函数用CURRENT_DATE、NOW()，字符串拼接用||"
+    }
+    db_hint = db_hints.get(config.db_type, "使用标准SQL语法")
+
     prompt = f"""你是一个SQL专家。根据用户查询和数据库schema，生成正确的SQL查询语句。
+
+数据库类型: {config.db_type.upper()}
+{db_hint}
 
 用户查询: {user_query}
 
@@ -208,7 +220,7 @@ def sql_generation_node(state: AgentState) -> dict[str, Any]:
 
 要求:
 1. 只返回SQL语句，不要有任何解释
-2. 使用标准SQL语法
+2. 根据数据库类型使用正确的语法
 3. 确保表名和列名正确
 4. 如果需要JOIN，确保JOIN条件正确
 5. 对于聚合查询，使用适当的GROUP BY
