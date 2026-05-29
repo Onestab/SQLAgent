@@ -18,18 +18,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 console = Console()
 
-# 全局配置
-VERBOSE_CONFIG = {
-    "show_intent": False,
-    "show_schema_linking": False,
-    "show_agentic_process": False,
-    "show_validation": False,
-    "show_retry": False,
-    "show_execution_details": False
-}
-
-
-def run_query(user_query: str, session_id: str = None, compiled_graph: CompiledStateGraph = None, initial_state: AgentState = None, checkpoint_config:dict=None, verbose: bool = False) -> dict:
+def run_query(user_query: str, session_id: str = None, compiled_graph: CompiledStateGraph = None, initial_state: AgentState = None, checkpoint_config:dict=None) -> dict:
     """运行单个查询
 
     Args:
