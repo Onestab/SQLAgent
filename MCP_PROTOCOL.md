@@ -80,9 +80,39 @@
 - `max_rows`：结果行数上限
 - `read_only`：必须为只读
 
-## 4. 元数据工具协议
+## 4. 远端最小工具集
 
-### 4.1 `metadata.describe_database`
+远端工具只实现当前本地真实使用、且未来确定需要外部化的能力。
+
+### 4.1 元数据工具
+
+- `metadata.get_database_info`
+- `metadata.search_relevant_tables`
+- `metadata.get_table_metadata`
+- `metadata.get_related_tables`
+- `metadata.get_schema_context`
+
+### 4.2 数据库工具
+
+- `database.list_tables`
+- `database.execute_query`
+
+当前不计划远端实现的能力：
+
+- `metadata.get_table_description`
+- `metadata.get_example_queries`
+- `database.get_table_schema`
+- `database.validate_sql`
+- `database.transpile_sql`
+
+说明：
+
+- 不计划实现并不代表永远不支持，而是当前没有实际调用路径，不提前外部化。
+- SQL 校验与方言适配目前保留在本地节点逻辑中。
+
+## 5. 元数据工具协议
+
+### 5.1 `metadata.get_database_info`
 
 请求：
 
@@ -102,7 +132,7 @@
 }
 ```
 
-### 4.2 `metadata.search_tables`
+### 5.2 `metadata.search_relevant_tables`
 
 请求：
 
@@ -128,7 +158,7 @@
 }
 ```
 
-### 4.3 `metadata.get_table`
+### 5.3 `metadata.get_table_metadata`
 
 请求：
 
@@ -169,7 +199,7 @@
 }
 ```
 
-### 4.4 `metadata.get_related_tables`
+### 5.4 `metadata.get_related_tables`
 
 请求：
 
@@ -194,7 +224,7 @@
 }
 ```
 
-### 4.5 `metadata.get_schema_context`
+### 5.5 `metadata.get_schema_context`
 
 请求：
 
@@ -231,33 +261,9 @@
 - `schema_context` 用于喂给 LLM
 - `tables` 用于未来严格结构化推理
 
-### 4.6 `metadata.get_examples`
+## 6. 数据库工具协议
 
-请求：
-
-```json
-{
-  "table_name": "orders",
-  "limit": 5
-}
-```
-
-响应 `data`：
-
-```json
-{
-  "examples": [
-    {
-      "question": "金额最高的订单",
-      "sql": "SELECT ..."
-    }
-  ]
-}
-```
-
-## 5. 数据库工具协议
-
-### 5.1 `database.list_tables`
+### 6.1 `database.list_tables`
 
 请求：
 
@@ -273,77 +279,7 @@
 }
 ```
 
-### 5.2 `database.get_table_schema`
-
-请求：
-
-```json
-{
-  "table_name": "orders"
-}
-```
-
-响应 `data`：
-
-```json
-{
-  "table_name": "orders",
-  "columns": [
-    {
-      "name": "order_id",
-      "type": "INTEGER",
-      "nullable": false,
-      "primary_key": true
-    }
-  ]
-}
-```
-
-### 5.3 `database.validate_sql`
-
-请求：
-
-```json
-{
-  "sql": "SELECT * FROM orders LIMIT 10",
-  "dialect": "sqlite"
-}
-```
-
-响应 `data`：
-
-```json
-{
-  "valid": true,
-  "normalized_sql": "SELECT * FROM orders LIMIT 10",
-  "statement_type": "SELECT",
-  "warnings": []
-}
-```
-
-### 5.4 `database.transpile_sql`
-
-请求：
-
-```json
-{
-  "sql": "SELECT 'a' || 'b'",
-  "source_dialect": "ansi",
-  "target_dialect": "mysql"
-}
-```
-
-响应 `data`：
-
-```json
-{
-  "sql": "SELECT CONCAT('a', 'b')",
-  "source_dialect": "ansi",
-  "target_dialect": "mysql"
-}
-```
-
-### 5.5 `database.execute_sql`
+### 6.2 `database.execute_query`
 
 请求：
 
@@ -372,7 +308,7 @@
 }
 ```
 
-## 6. 错误码约定
+## 7. 错误码约定
 
 建议统一使用：
 
@@ -387,20 +323,17 @@
 - `UPSTREAM_UNAVAILABLE`
 - `INTERNAL_ERROR`
 
-## 7. 与当前本地工具映射
+## 8. 与当前本地能力映射
 
-- `search_relevant_tables` -> `metadata.search_tables`
-- `get_table_metadata` -> `metadata.get_table`
-- `get_table_description` -> `metadata.get_table`
+- `get_database_info` -> `metadata.get_database_info`
+- `search_relevant_tables` -> `metadata.search_relevant_tables`
+- `get_table_metadata` -> `metadata.get_table_metadata`
 - `get_related_tables` -> `metadata.get_related_tables`
 - `get_schema_context` -> `metadata.get_schema_context`
-- `get_example_queries` -> `metadata.get_examples`
 - `list_tables` -> `database.list_tables`
-- `get_table_schema` -> `database.get_table_schema`
-- `validate_sql` -> `database.validate_sql`
-- `execute_query` -> `database.execute_sql`
+- `execute_query` -> `database.execute_query`
 
-## 8. 迁移建议
+## 9. 迁移建议
 
 1. 先冻结本协议，不改 Agent 节点语义。
 2. 在 `tools/` 层保留兼容适配器。
@@ -408,19 +341,14 @@
 4. 后续将适配器替换为 MCP 客户端调用。
 5. 节点与图逻辑不感知本地/远端切换。
 
-## 9. 当前代码约束
+## 10. 当前代码约束
 
-当前项目仍有历史工具返回简化格式，例如：
+当前项目中：
 
-- `List[str]`
-- `Dict[str, Any]`
-- `list[dict]`
+- `agent_tools.py` 仅保留当前 Agent 使用的最小工具集合
+- `protocol_tools.py` 只保留未来确定需要远端实现的最小协议集合
 
-这是为了兼容现有 Agent 节点。
+建议后续迁移顺序：
 
-建议后续分两步演进：
-
-1. 工具层同时暴露：
-   - 面向当前节点的兼容接口
-   - 面向未来 MCP 的协议接口
-2. 节点逐步改为直接消费协议接口
+1. 节点先改为通过 `protocol_tools.py` 调用协议接口
+2. 再将 `protocol_tools.py` 的本地实现替换为 MCP client

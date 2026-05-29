@@ -186,10 +186,11 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
     system_prompt = f"""你是一个数据库Schema检索专家。你的任务是根据用户意图找到所有相关的数据库表及其Schema信息。
 你需要：
 1. 使用search_relevant_tables工具搜索与问题相关的表， 可根据需求适当修改query内容
-2. 对于找到的每个表，使用get_related_tables工具查找其关联表
-3. 使用get_schema_context获取详细的Schema信息
-4. 判断是否已经找到回答问题所需的所有表，如果不够完整，继续搜索
-5. 当你确认已经找到所有必要的表和Schema信息后，总结你找到的表名列表
+2. 必要时使用get_table_metadata工具查看某个表的详细元数据
+3. 对于找到的每个表，使用get_related_tables工具查找其关联表
+4. 使用get_schema_context获取详细的Schema信息
+5. 判断是否已经找到回答问题所需的所有表，如果不够完整，继续搜索
+6. 当你确认已经找到所有必要的表和Schema信息后，总结你找到的表名列表
 
 重要提示：
 - 对于涉及多表关联的查询（如订单和用户、产品和订单等），务必找到所有相关联的表
