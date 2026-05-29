@@ -36,15 +36,27 @@ def _message_text(message: Any) -> str:
     return str(content)
 
 
+def _message_reasoning_text(message: Any) -> str:
+    additional_kwargs = getattr(message, "additional_kwargs", {}) or {}
+    reasoning = additional_kwargs.get("reasoning_content", "")
+    if isinstance(reasoning, str):
+        return reasoning
+    return str(reasoning)
+
+
 def _stream_llm_text(llm: Any, messages: list[Any], *, stage: str) -> str:
-    """流式消费LLM输出，同时汇总完整文本。"""
+    """流式消费LLM输出，同时区分思考内容与最终回答。"""
     _stream_event("llm_stage", stage=stage, status="start")
     parts: list[str] = []
     for chunk in llm.stream(messages):
+        reasoning_text = _message_reasoning_text(chunk)
+        if reasoning_text:
+            _stream_event("llm_reasoning_chunk", stage=stage, text=reasoning_text)
         text = _message_text(chunk)
         if not text:
             continue
         parts.append(text)
+        _stream_event("llm_answer_chunk", stage=stage, text=text)
     full_text = "".join(parts).strip()
     _stream_event("llm_stage", stage=stage, status="end", text=full_text)
     return full_text

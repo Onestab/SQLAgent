@@ -33,13 +33,25 @@ LLM_STAGE_LABELS = {
     "result_interpretation": "组织回答",
 }
 
+THINKING_STAGE_LABELS = {
+    "intent_recognition": "思考",
+    "sql_generation": "推理",
+    "result_interpretation": "构思回答",
+}
+
+ANSWER_STAGE_LABELS = {
+    "intent_recognition": "结论",
+    "sql_generation": "SQL",
+    "result_interpretation": "回答",
+}
+
 
 class CliStreamRenderer:
     """渲染LangGraph流事件。"""
 
     def __init__(self, console: Console):
         self.console = console
-        self._active_llm_stage: str | None = None
+        self._active_llm_stage: tuple[str, str] | None = None
         self._active_agent_source: str | None = None
         self._node_status: dict[str, str] = {}
 
@@ -52,8 +64,6 @@ class CliStreamRenderer:
         if event_type == "custom":
             self._render_custom_event(data)
             return
-        if event_type == "messages":
-            self._render_message_event(data)
 
     def _render_task_event(self, data: dict[str, Any]) -> None:
         node_name = data.get("name", "unknown")
@@ -79,6 +89,10 @@ class CliStreamRenderer:
         event_name = data.get("event")
         if event_name == "llm_stage":
             self._handle_llm_stage(data)
+        elif event_name == "llm_reasoning_chunk":
+            self._handle_llm_chunk(data, kind="reasoning")
+        elif event_name == "llm_answer_chunk":
+            self._handle_llm_chunk(data, kind="answer")
         elif event_name == "decision":
             route = data.get("route")
             text = "普通对话" if route == "common_chat" else "进入 SQL 路径"
@@ -132,14 +146,29 @@ class CliStreamRenderer:
     def _handle_llm_stage(self, data: dict[str, Any]) -> None:
         stage = data.get("stage")
         status = data.get("status")
-        label = LLM_STAGE_LABELS.get(stage, stage or "LLM")
         if status == "start":
             self._flush_llm_stream()
-            self._active_llm_stage = stage
-            self.console.print(f"[magenta]  {label}:[/magenta] ", end="")
         elif status == "end":
             self._flush_llm_stream()
             self._active_llm_stage = None
+
+    def _handle_llm_chunk(self, data: dict[str, Any], *, kind: str) -> None:
+        text = data.get("text", "")
+        stage = data.get("stage")
+        if not text or not stage:
+            return
+        active_key = (stage, kind)
+        if self._active_llm_stage != active_key:
+            self._flush_llm_stream()
+            self._active_llm_stage = active_key
+            if kind == "reasoning":
+                label = THINKING_STAGE_LABELS.get(stage, "思考")
+                style = "magenta"
+            else:
+                label = ANSWER_STAGE_LABELS.get(stage, LLM_STAGE_LABELS.get(stage, "输出"))
+                style = "bright_cyan"
+            self.console.print(f"[{style}]  {label}:[/{style}] ", end="")
+        self.console.print(text, end="", soft_wrap=True)
 
     def _handle_agent_chunk(self, data: dict[str, Any]) -> None:
         source = data.get("source") or "agent"
@@ -152,30 +181,6 @@ class CliStreamRenderer:
             label = "Agent" if source == "agent" else f"Tool<{source}>"
             self.console.print(f"[yellow]  {label}:[/yellow] ", end="")
         self.console.print(text, end="", soft_wrap=True)
-
-    def _render_message_event(self, data: Any) -> None:
-        chunk, metadata = data
-        node_name = metadata.get("langgraph_node")
-        if node_name == "agentic_schema_linking":
-            return
-        content = getattr(chunk, "content", "")
-        if not content:
-            return
-        if isinstance(content, list):
-            parts = []
-            for item in content:
-                if isinstance(item, dict) and item.get("text"):
-                    parts.append(item["text"])
-            content = "".join(parts)
-        if not isinstance(content, str) or not content:
-            return
-        stage = node_name or "llm"
-        if self._active_llm_stage != stage:
-            self._flush_llm_stream()
-            self._active_llm_stage = stage
-            label = LLM_STAGE_LABELS.get(stage, NODE_LABELS.get(stage, "LLM"))
-            self.console.print(f"[magenta]  {label}:[/magenta] ", end="")
-        self.console.print(content, end="", soft_wrap=True)
 
     def _flush_llm_stream(self) -> None:
         if self._active_llm_stage is not None:
@@ -238,7 +243,7 @@ def run_query(
         for event in compiled_graph.stream(
             input=initial_state,
             config=checkpoint_config,
-            stream_mode=["values", "tasks", "messages", "custom"],
+            stream_mode=["values", "tasks", "custom"],
             version="v2",
         ):
             renderer.render(event)
@@ -285,12 +290,12 @@ def process_single_query(
         console.print(Panel(result["error_message"], title="[bold red]错误[/bold red]", border_style="red"))
 
 
-def interactive_mode() -> None:
+def interactive_mode(stream: bool = True) -> None:
     """交互式问答模式"""
     console.print(Panel.fit(
         "[bold cyan]SQLAgent - 智能问数系统[/bold cyan]\n"
         "基于LangGraph的Text-to-SQL系统\n"
-        "支持流式显示思考、工具调用与节点流程\n"
+        f"{'支持' if stream else '关闭'}流式显示思考、工具调用与节点流程\n"
         "输入 'exit' 或 'quit' 退出",
         border_style="cyan"
     ))
@@ -318,7 +323,7 @@ def interactive_mode() -> None:
                 compiled_graph=compiled_graph,
                 initial_state=initial_state,
                 checkpoint_config=ckpt_config,
-                stream=True,
+                stream=stream,
             )
 
         except KeyboardInterrupt:
@@ -336,8 +341,10 @@ def main() -> None:
     parser.add_argument("--init-db", action="store_true", help="初始化演示数据库")
     parser.add_argument("--query", type=str, help="直接执行查询")
     parser.add_argument("--interactive", action="store_true", help="交互式模式")
+    parser.add_argument("--no-stream", action="store_true", help="关闭流式输出")
 
     args = parser.parse_args()
+    stream = not args.no_stream
 
     if args.init_db:
         console.print("[cyan]正在初始化演示数据库...[/cyan]")
@@ -357,11 +364,11 @@ def main() -> None:
             compiled_graph=compiled_graph,
             initial_state=initial_state,
             checkpoint_config=ckpt_config,
-            stream=True,
+            stream=stream,
         )
         return
 
-    interactive_mode()
+    interactive_mode(stream=stream)
 
 
 if __name__ == "__main__":

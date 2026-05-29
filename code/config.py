@@ -23,6 +23,8 @@ class AppConfig(BaseModel):
     dashscope_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     dashscope_api_key: str | None = None
     dashscope_model: str | None = None
+    dashscope_enable_thinking: bool = True
+    dashscope_thinking_budget: int | None = None
 
     # Embedding模型配置
     embedding_provider: str = "sentence-transformers"
@@ -83,6 +85,12 @@ def load_config() -> AppConfig:
         dashscope_base_url=os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
         dashscope_api_key=os.getenv("DASHSCOPE_API_KEY"),
         dashscope_model=os.getenv("DASHSCOPE_MODEL", "qwen-plus"),
+        dashscope_enable_thinking=os.getenv("DASHSCOPE_ENABLE_THINKING", "true").lower() == "true",
+        dashscope_thinking_budget=(
+            int(os.getenv("DASHSCOPE_THINKING_BUDGET"))
+            if os.getenv("DASHSCOPE_THINKING_BUDGET")
+            else None
+        ),
         embedding_provider=os.getenv("EMBEDDING_PROVIDER", "sentence-transformers"),
         embedding_model=os.getenv("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2"),
         vllm_embedding_base_url=os.getenv("VLLM_EMBEDDING_BASE_URL", "http://localhost:8000/v1"),
@@ -180,6 +188,8 @@ def get_llm():
             api_key=config.dashscope_api_key,
             temperature=0,
             max_tokens=4096,
+            enable_thinking=config.dashscope_enable_thinking,
+            thinking_budget=config.dashscope_thinking_budget,
         )
     else:
         raise ValueError(f"Unsupported LLM provider: {config.llm_provider}")
