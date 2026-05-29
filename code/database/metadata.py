@@ -11,12 +11,12 @@ from typing import Optional, List, Dict, Any, Set, Tuple
 import numpy as np
 import re
 
-sys.path.append(str(Path(__file__).parent.parent))
+# sys.path.append(str(Path(__file__).parent.parent))
 
 class MetadataManager:
     """元数据管理器，支持混合检索策略"""
 
-    def __init__(self, metadata_dir: str = "./metadata", embedding_model=None):
+    def __init__(self, metadata_dir: str = "/data/liuqi/SQLAgent/code/metadata", embedding_model=None):
         self.metadata_dir = Path(metadata_dir)
         self.metadata_dir.mkdir(exist_ok=True)
         self.metadata_cache = {}
@@ -317,7 +317,9 @@ class MetadataManager:
 
 # 全局实例
 metadata_manager = MetadataManager()
-
+print("########## metadata #####################")
+print(metadata_manager.metadata_cache)
+print("#########################################")
 def load_metadata():
     """加载元数据管理器"""
     return metadata_manager
