@@ -5,6 +5,7 @@ LangGraph节点实现
 import json
 import re
 import sqlparse
+import sqlglot
 from typing import Any
 from config import get_llm
 from tools import ALL_TOOLS
@@ -62,6 +63,24 @@ def _stream_llm_text(llm: Any, messages: list[Any], *, stage: str) -> str:
     full_text = "".join(parts).strip()
     _stream_event("llm_stage", stage=stage, status="end", text=full_text)
     return full_text
+
+
+def _normalize_sqlglot_dialect(db_type: str) -> str:
+    dialect_map = {
+        "sqlite": "sqlite",
+        "mysql": "mysql",
+        "postgresql": "postgres",
+    }
+    return dialect_map.get(db_type, db_type)
+
+
+def _adapt_sql_dialect(sql: str, db_type: str) -> str:
+    """使用 sqlglot 将 SQL 适配到目标数据库方言。"""
+    target_dialect = _normalize_sqlglot_dialect(db_type)
+    transpiled = sqlglot.transpile(sql, write=target_dialect, identity=False)
+    if not transpiled:
+        raise ValueError("sqlglot returned empty transpilation result")
+    return transpiled[0].strip()
 
 
 def load_memory_node(state: AgentState) -> dict[str, Any]:
@@ -307,18 +326,9 @@ def sql_generation_node(state: AgentState) -> dict[str, Any]:
     retry_count = state.get("retry_count", 0)
     execution_error = state.get("execution_error")
 
-    # 数据库类型特定的语法提示
-    db_hints = {
-        "sqlite": "使用SQLite语法，日期函数用date()、datetime()，字符串拼接用||",
-        "mysql": "使用MySQL语法，日期函数用DATE()、NOW()，字符串拼接用CONCAT()",
-        "postgresql": "使用PostgreSQL语法，日期函数用CURRENT_DATE、NOW()，字符串拼接用||"
-    }
-    db_hint = db_hints.get(config.db_type, "使用标准SQL语法")
-
     prompt = f"""你是一个SQL专家。根据用户查询和数据库schema，生成正确的SQL查询语句。
 
-数据库类型: {config.db_type.upper()}
-{db_hint}
+目标数据库类型: {config.db_type.upper()}
 
 用户查询: {user_query}
 用户意图：{user_intent}
@@ -328,11 +338,12 @@ def sql_generation_node(state: AgentState) -> dict[str, Any]:
 
 要求:
 1. 只返回SQL语句，不要有任何解释
-2. 根据数据库类型使用正确的语法
+2. 优先使用通用、标准、可移植的SQL写法，避免强依赖特定数据库方言
 3. 确保表名和列名正确
 4. 如果需要JOIN，确保JOIN条件正确
 5. 对于聚合查询，使用适当的GROUP BY
 6. 所给schema都是回答问题所必须的，充分思考所给的schema之间的关联后再生成SQL
+7. 如果存在日期、字符串、空值处理等表达式，优先选择标准SQL兼容写法
 """
 
     if execution_error:
@@ -355,6 +366,22 @@ def sql_generation_node(state: AgentState) -> dict[str, Any]:
     if sql.endswith("```"):
         sql = sql[:-3]
     sql = sql.strip()
+    try:
+        adapted_sql = _adapt_sql_dialect(sql, config.db_type)
+        _stream_event(
+            "sql_dialect_adapted",
+            source_sql=sql,
+            adapted_sql=adapted_sql,
+            target_dialect=config.db_type,
+        )
+        sql = adapted_sql
+    except Exception as e:
+        _stream_event(
+            "sql_dialect_adaptation_failed",
+            source_sql=sql,
+            target_dialect=config.db_type,
+            error=str(e),
+        )
     _stream_event("sql_generated", sql=sql)
 
     return {
