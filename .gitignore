@@ -38,6 +38,7 @@ ENV/
 .DS_Store
 *.sublime-project
 *.sublime-workspace
+.claude/
 
 # ===== SQLite Database =====
 *.db
