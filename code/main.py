@@ -28,31 +28,6 @@ NODE_LABELS = {
     "error_handler": "错误处理",
 }
 
-LLM_STAGE_LABELS = {
-    "intent_recognition": "思考中",
-    "sql_generation": "生成 SQL",
-    "result_interpretation": "组织回答",
-}
-
-THINKING_STAGE_LABELS = {
-    "intent_recognition": "思考",
-    "sql_generation": "推理",
-    "result_interpretation": "构思回答",
-}
-
-ANSWER_STAGE_LABELS = {
-    "intent_recognition": "结论",
-    "sql_generation": "SQL",
-    "result_interpretation": "回答",
-}
-
-FINAL_STAGE_LABELS = {
-    "intent_recognition": "意图结果",
-    "sql_generation": "SQL 结果",
-    "result_interpretation": "最终回答",
-}
-
-
 class CliStreamRenderer:
     """渲染LangGraph流事件。"""
 
@@ -191,17 +166,11 @@ class CliStreamRenderer:
             self._active_llm_stage = active_key
             if kind == "reasoning":
                 self._open_section("think", "THINK", "magenta")
-                label = THINKING_STAGE_LABELS.get(stage, "思考")
-                style = "magenta"
             else:
                 section = "answer" if stage != "result_interpretation" else "final"
                 title = "ANSWER" if stage != "result_interpretation" else "FINAL"
                 color = "bright_cyan" if stage != "result_interpretation" else "green"
                 self._open_section(section, title, color)
-                labels = FINAL_STAGE_LABELS if stage == "result_interpretation" else ANSWER_STAGE_LABELS
-                label = labels.get(stage, LLM_STAGE_LABELS.get(stage, "输出"))
-                style = color
-            self.console.print(f"[{style}]  {label}[/{style}] ", end="")
         self.console.print(text, end="", soft_wrap=True)
         self._llm_accumulated[active_key] = self._llm_accumulated.get(active_key, "") + text
 
