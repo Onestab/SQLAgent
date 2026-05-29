@@ -317,9 +317,9 @@ class MetadataManager:
 
 # 全局实例
 metadata_manager = MetadataManager()
-print("########## metadata #####################")
-print(metadata_manager.metadata_cache)
-print("#########################################")
+# print("########## metadata #####################")
+# print(metadata_manager.metadata_cache)
+# print("#########################################")
 def load_metadata():
     """加载元数据管理器"""
     return metadata_manager
