@@ -39,6 +39,7 @@ ENV/
 *.sublime-project
 *.sublime-workspace
 .claude/
+.langgraph_api/
 
 # ===== SQLite Database =====
 *.db
