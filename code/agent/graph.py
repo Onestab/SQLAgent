@@ -4,11 +4,11 @@ LangGraph工作流图定义
 """
 from typing import Literal
 from langgraph.graph import StateGraph, END
+from langgraph.graph.state import CompiledStateGraph
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from agent.state import AgentState
 from agent.nodes import (
     intent_recognition_node,
-    common_chat_node,
     agentic_schema_linking_node,
     sql_generation_node,
     sql_validation_node,
@@ -33,13 +33,12 @@ def need_sql_chat(state: AgentState) -> Literal["agentic_schema_linking", "commo
         return "common_chat"
     return "agentic_schema_linking"
 
-def build_graph() -> StateGraph:
+def build_graph(checkpointer) -> CompiledStateGraph:
     """构建LangGraph工作流"""
     workflow = StateGraph(AgentState)
 
     # 添加节点
     workflow.add_node("intent_recognition", intent_recognition_node)
-    workflow.add_node("common_chat", common_chat_node)
     workflow.add_node("agentic_schema_linking", agentic_schema_linking_node)
     workflow.add_node("sql_generation", sql_generation_node)
     workflow.add_node("sql_validation", sql_validation_node)
@@ -56,7 +55,7 @@ def build_graph() -> StateGraph:
         need_sql_chat,
         {
             "agentic_schema_linking": "agentic_schema_linking",
-            "common_chat": "common_chat"
+            "common_chat": END
         }
     )
     workflow.add_edge("agentic_schema_linking", "sql_generation")
@@ -74,12 +73,8 @@ def build_graph() -> StateGraph:
         }
     )
 
-    workflow.add_edge("common_chat", END)
     workflow.add_edge("result_interpretation", END)
     workflow.add_edge("error_handler", END)
 
-    return workflow.compile()
+    return workflow.compile(checkpointer)
 
-
-# 编译图
-compiled_graph = build_graph()

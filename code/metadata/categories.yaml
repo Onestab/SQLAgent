@@ -1,5 +1,5 @@
 description: "产品类别表，存储商品分类信息"
-business_context: "定义商品的分类体系，每个类别可以包含多个产品。"
+business_context: "定义商品的分类体系，每个类别可以包含多个产品。类别可能是其他类别的父类别"
 
 # 表关联关系
 relationships:
@@ -35,12 +35,18 @@ columns:
     type: TEXT
     description: "类别名称"
     keywords: [类别, 分类, 类型]
+  - name: parent_category_id
+    type: INTEGER
+    description: "当前类别的的父类别"
   - name: description
     type: TEXT
     description: "类别描述"
+  - name: created_at
+    type: TIMESTAMP
+    description: "创建时间"
 
 example_queries:
   - question: "查询所有商品类别"
     sql: "SELECT * FROM categories"
-  - question: "查询电子产品类别下有多少商品"
-    sql: "SELECT COUNT(*) FROM products p JOIN categories c ON p.category_id = c.category_id WHERE c.category_name = '电子产品'"
+  - question: "查询手机类别下有多少商品"
+    sql: "SELECT COUNT(*) FROM products p JOIN categories c ON p.category_id = c.category_id WHERE c.category_name = '手机'"

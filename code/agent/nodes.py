@@ -2,73 +2,84 @@
 LangGraph节点实现
 每个节点负责工作流中的一个步骤
 """
-from agent.state import AgentState
-from config import get_llm
-from database.connection import list_tables_sync, get_table_schema_sync, execute_query_sync
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+import re
+from http.cookiejar import debug
 import sqlparse
 from typing import Any
+from config import get_llm
 from tools import ALL_TOOLS
-import re
-import os
+from agent.state import AgentState
+from database.connection import list_tables_sync, get_table_schema_sync, execute_query_sync
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, trim_messages
 
 # 全局配置，由main.py设置
 _verbose_config = {
     "show_agentic_process": False
 }
 
+
 def set_verbose_config(config: dict):
     """设置详细输出配置"""
     global _verbose_config
     _verbose_config.update(config)
 
-
-def intent_recognition_node(state: AgentState) -> dict[str, Any]:
-    """意图识别节点：分析用户查询意图"""
-    llm = get_llm()
-    user_query = state["user_query"]
-
-    prompt = f"""根据问题判断用户意图。
-
-如果用户需要查询数据库，则简要说明用户的查询意图（1-2句话）
-
-如果判断用户不需要访问数据库，则返回字符串common，其余不要输出任何内容
-
-用户查询: {user_query}
-
-。
-"""
-
-    messages = [SystemMessage(content=prompt)]
-    response = llm.invoke(messages)
-
-    print("意图的response", response.content)
-    if response.content == "common":
-        return {
-            "chat_mode": "common",
-            "llm_messages": [HumanMessage(content=user_query), AIMessage(content=response.content)]
-        }
+def load_memory_node(state: AgentState) -> dict[str, Any]:
+    """加载历史对话记忆"""
+    messages = state["llm_messages"]
+    max_token_len = 262144
+    trimmed = trim_messages(
+        messages,
+        max_tokens=max_token_len*0.6,
+        strategy="last",
+        token_counter=len,
+        allow_partial=False,
+        include_system=True,
+        start_on="human"
+    )
     return {
-        "chat_mode": "sql",
-        "intent": response.content,
-        "llm_messages": [HumanMessage(content=user_query), AIMessage(content=response.content)]
+        "llm_messages": trimmed
     }
 
 
-def common_chat_node(state: AgentState) -> dict[str, Any]:
-    """普通聊天节点：正常对话，不调用SQL"""
+def intent_recognition_node(state: AgentState) -> dict[str, Any]:
+    """意图识别节点：分析用户查询意图"""
+    from database.metadata import metadata_manager
     llm = get_llm()
+    db_info, table_cnt = metadata_manager.get_database_info()
     user_query = state["user_query"]
-    print("进入普通聊天模式")
-    prompt = f"""
-用户提问: {user_query}
+    history = state.get("llm_messages", [])
+    prompt = f"""根据当前问题及历史对话判断用户意图。
 
-请根据用户提问生成回复。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
+如果回答用户当前问题必须查询数据库，则返回字符串sql，并简要说明用户的查询意图（1-2句话，如有指代关系需要替换成实际名称）
+
+如果判断用户不需要访问数据库，则返回字符串common，并直接回答用户问题。
+
+输出格式：
+- 需要查询数据库情况：sql 用户查询意图
+- 无需查询数据库情况：common 你的回答
+
+当前数据库包含的表：
+{"\n".join(db_info)}
+
+当前数据库包含表的总数：
+{table_cnt}
 """
-    messages = [SystemMessage(content=prompt)]
+    messages = history + [HumanMessage(content=prompt), HumanMessage(content=user_query)]
+    print("####################")
+    print(messages)
+    print("####################")
     response = llm.invoke(messages)
+    if response.content.strip().startswith("common"):
+        print("进入common聊天模式")
+        return {
+            "chat_mode": "common",
+            "llm_messages": [HumanMessage(content=user_query), AIMessage(content=response.content.strip().strip("common").strip())]
+        }
+    print("进入sql聊天模式")
     return {
-        "llm_messages": [AIMessage(content=response.content)]
+        "chat_mode": "sql",
+        "intent": response.content.strip().strip("sql").strip(),
+        "llm_messages": [HumanMessage(content=user_query), AIMessage(content=response.content)]
     }
 
 def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
@@ -76,6 +87,7 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
 
     通过ReAct Agent自主调用检索工具，多轮交互确保召回所有相关Schema
     """
+    print("进入agentic_schema_linking_node")
     user_query = state["user_query"]
     intent = state["intent"]
     llm = get_llm()
@@ -84,15 +96,11 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
     from langgraph.prebuilt import create_react_agent
 
     # 系统提示：指导Agent如何进行Schema检索
-    system_prompt = f"""你是一个数据库Schema检索专家。你的任务是根据用户问题找到所有相关的数据库表及其Schema信息。
-
-用户问题: {user_query}
-用户意图: {intent}
-
+    system_prompt = f"""你是一个数据库Schema检索专家。你的任务是根据用户意图找到所有相关的数据库表及其Schema信息。
 你需要：
 1. 使用search_relevant_tables工具搜索与问题相关的表， 可根据需求适当修改query内容
 2. 对于找到的每个表，使用get_related_tables工具查找其关联表
-3. 使用get_table_metadata或get_schema_context获取详细的Schema信息
+3. 使用get_schema_context获取详细的Schema信息
 4. 判断是否已经找到回答问题所需的所有表，如果不够完整，继续搜索
 5. 当你确认已经找到所有必要的表和Schema信息后，总结你找到的表名列表
 
@@ -101,23 +109,27 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
 - 如果问题涉及聚合、统计，确保找到包含相关指标的表
 - 必要时使用get_related_tables工具扩展搜索范围，避免遗漏关联表
 
-请开始检索，最后以"找到的相关表: [表1, 表2, ...]"的格式总结。"""
+请开始检索，最后结果以"相关表: [表1, 表2, ...]"的格式总结。"""
 
+    user_input = f"""
+用户问题: {user_query}
+用户意图: {intent}
+"""
     if _verbose_config.get("show_agentic_process", False):
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("AgenticRAG Schema检索过程")
-        print("="*60)
+        print("=" * 60)
         print(f"用户问题: {user_query}")
         print(f"用户意图: {intent}")
-        print("-"*60)
+        print("-" * 60)
 
     # 创建ReAct Agent
     react_agent = create_react_agent(model=llm, tools=ALL_TOOLS)
 
     # 调用Agent进行多轮检索
     result = react_agent.invoke(input={
-        "messages": [SystemMessage(content=system_prompt)],
-    },debug=True)
+        "messages": [SystemMessage(content=system_prompt), HumanMessage(content=user_input)],
+    }, debug=True)
     # 从Agent的响应中提取找到的表名
     agent_messages = result.get("messages", [])
 
@@ -125,7 +137,7 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
         print("\nAgent检索过程:")
         for i, msg in enumerate(agent_messages):
             if hasattr(msg, 'content') and msg.content:
-                print(f"\n[步骤 {i+1}] {msg.__class__.__name__}:")
+                print(f"\n[步骤 {i + 1}] {msg.__class__.__name__}:")
                 print(msg.content[:200] + "..." if len(msg.content) > 200 else msg.content)
             if hasattr(msg, 'tool_calls') and msg.tool_calls:
                 for tool_call in msg.tool_calls:
@@ -139,7 +151,7 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
 
     # 尝试从最后的消息中提取表名
     # 匹配 "找到的相关表: [...]" 或类似格式
-    table_pattern = r'找到的相关表[：:]\s*\[([^\]]+)\]'
+    table_pattern = r'相关表[：:]\s*\[([^\]]+)\]'
     match = re.search(table_pattern, final_message)
 
     if match:
@@ -169,7 +181,7 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
         if _verbose_config.get("show_agentic_process", False):
             print("\n⚠️  Agent未找到表，使用传统检索方法")
         from database.metadata import metadata_manager
-        relevant_tables = metadata_manager.search_relevant_tables(user_query, top_k=3)
+        relevant_tables = metadata_manager.search_relevant_tables(user_query, top_k=5)
 
     # 如果仍然没有找到，使用所有表的前几个
     if not relevant_tables:
@@ -181,9 +193,9 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
     schema_context = metadata_manager.get_schema_context(relevant_tables, include_examples=True)
 
     if _verbose_config.get("show_agentic_process", False):
-        print("\n" + "-"*60)
+        print("\n" + "-" * 60)
         print(f"✓ 最终找到的相关表: {relevant_tables}")
-        print("="*60 + "\n")
+        print("=" * 60 + "\n")
 
     return {
         "relevant_tables": relevant_tables,
@@ -191,11 +203,13 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
         "llm_messages": [AIMessage(content=f"通过智能检索找到相关表: {', '.join(relevant_tables)}")]
     }
 
+
 def sql_generation_node(state: AgentState) -> dict[str, Any]:
     """SQL生成节点：基于意图和schema生成SQL"""
     from config import config
     llm = get_llm()
     user_query = state["user_query"]
+    user_intent = state["intent"]
     schema_context = state["schema_context"]
     retry_count = state.get("retry_count", 0)
     execution_error = state.get("execution_error")
@@ -214,6 +228,7 @@ def sql_generation_node(state: AgentState) -> dict[str, Any]:
 {db_hint}
 
 用户查询: {user_query}
+用户意图：{user_intent}
 
 数据库Schema:
 {schema_context}
@@ -224,6 +239,7 @@ def sql_generation_node(state: AgentState) -> dict[str, Any]:
 3. 确保表名和列名正确
 4. 如果需要JOIN，确保JOIN条件正确
 5. 对于聚合查询，使用适当的GROUP BY
+6. 所给schema都是回答问题所必须的，充分思考所给的schema之间的关联后再生成SQL
 """
 
     if execution_error:
@@ -233,9 +249,13 @@ def sql_generation_node(state: AgentState) -> dict[str, Any]:
 请修正SQL语句。
 """
 
-    messages = [SystemMessage(content=prompt)]
+    messages = [HumanMessage(content=prompt)]
+    # 开启思考模式，需要同步修改response接收方式
+    # response = llm.invoke(messages, reasoning={
+    #     "effort": "medium",  # 'low', 'medium', or 'high'
+    #     "summary": "detailed",  # 'detailed', 'auto', or None
+    # }, )
     response = llm.invoke(messages)
-
     # 提取SQL语句
     sql = response.content.strip()
     # 移除可能的markdown代码块标记
@@ -327,7 +347,7 @@ def result_interpretation_node(state: AgentState) -> dict[str, Any]:
 请用简洁、清晰的中文回答用户的问题。如果结果为空，请说明没有找到相关数据。
 """
 
-    messages = [SystemMessage(content=prompt)]
+    messages = [HumanMessage(content=prompt)]
     response = llm.invoke(messages)
 
     return {

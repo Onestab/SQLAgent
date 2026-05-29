@@ -60,7 +60,8 @@ class AppConfig(BaseModel):
     @classmethod
     def validate_embedding_provider(cls, v: str) -> str:
         if v not in ("sentence-transformers", "huggingface", "vllm", "dashscope"):
-            raise ValueError(f"EMBEDDING_PROVIDER must be 'sentence-transformers', 'huggingface', 'vllm', or 'dashscope', got: {v}")
+            raise ValueError(
+                f"EMBEDDING_PROVIDER must be 'sentence-transformers', 'huggingface', 'vllm', or 'dashscope', got: {v}")
         return v
 
     @field_validator("db_type")
@@ -127,7 +128,8 @@ def get_embedding_model():
         _embedding_model_instance = OpenAIEmbeddings(
             model=config.vllm_embedding_model,
             api_key=config.vllm_embedding_api_key,
-            base_url=config.vllm_embedding_base_url
+            base_url=config.vllm_embedding_base_url,
+            check_embedding_ctx_length=False,  # 禁用OpenAI tiktoken，防止报错
         )
     elif config.embedding_provider == "dashscope":
         from langchain_community.embeddings import DashScopeEmbeddings
@@ -163,7 +165,13 @@ def get_llm():
             model=config.vllm_model,
             temperature=0,
             max_tokens=4096,
+            tiktoken_model_name=None,  # 禁用OpenAI tiktoken，防止报错
+            # reasoning={
+            #     "effort": "medium",  # 'low', 'medium', or 'high'
+            #     "summary": "auto",  # 'detailed', 'auto', or None
+            # },
         )
+        print("成功加载模型")
     elif config.llm_provider == "dashscope":
         from langchain_qwq import ChatQwen
         _llm_instance = ChatQwen(

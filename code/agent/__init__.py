@@ -1,2 +1,2 @@
-from .graph import compiled_graph
+from .graph import build_graph
 from .state import AgentState

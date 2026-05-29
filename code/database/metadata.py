@@ -3,6 +3,7 @@
 负责存储和检索数据库表的业务语义信息
 采用混合检索策略：关键词匹配 + 向量检索 + 关联表扩展
 """
+import sys
 import json
 import yaml
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Optional, List, Dict, Any, Set, Tuple
 import numpy as np
 import re
 
+sys.path.append(str(Path(__file__).parent.parent))
 
 class MetadataManager:
     """元数据管理器，支持混合检索策略"""
@@ -307,11 +309,14 @@ class MetadataManager:
             context_parts.append(table_context)
 
         return "\n".join(context_parts)
+    def get_database_info(self) -> tuple[list[str], int]:
+        """获取当前数据库的表描述和表数量"""
+        tables_desc = [k + ": " + v.get("description","") for k,v in self.metadata_cache.items()]
+        return tables_desc, len(tables_desc)
 
 
 # 全局实例
 metadata_manager = MetadataManager()
-
 
 def load_metadata():
     """加载元数据管理器"""

@@ -3,15 +3,18 @@ SQLAgent主程序
 基于LangGraph的智能问数系统
 """
 import uuid
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.table import Table
-from agent.graph import compiled_graph
+from agent.graph import build_graph
 from agent.state import AgentState
 from agent.nodes import set_verbose_config
 from database.connection import initialize_demo_db
-from config import config
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph.state import CompiledStateGraph
+
 
 console = Console()
 
@@ -26,7 +29,7 @@ VERBOSE_CONFIG = {
 }
 
 
-def run_query(user_query: str, session_id: str = None, verbose: bool = False) -> dict:
+def run_query(user_query: str, session_id: str = None, compiled_graph: CompiledStateGraph = None, initial_state: AgentState = None, checkpoint_config:dict=None, verbose: bool = False) -> dict:
     """运行单个查询
 
     Args:
@@ -37,28 +40,11 @@ def run_query(user_query: str, session_id: str = None, verbose: bool = False) ->
     if session_id is None:
         session_id = str(uuid.uuid4())
 
-    # 初始化状态
-    initial_state: AgentState = {
-        "user_query": user_query,
-        "session_id": session_id,
-        "intent": "",
-        "relevant_tables": [],
-        "schema_context": "",
-        "generated_sql": "",
-        "sql_validation_result": "",
-        "retry_count": 0,
-        "query_results": [],
-        "execution_error": None,
-        "final_answer": "",
-        "error_message": None,
-        "llm_messages": []
-    }
-
     if verbose or VERBOSE_CONFIG["show_agentic_process"]:
         console.print("[dim]开始执行查询流程...[/dim]")
 
     # 执行图
-    result = compiled_graph.invoke(initial_state)
+    result = compiled_graph.invoke(input=initial_state, config=checkpoint_config)
 
     # 显示中间过程
     if verbose or VERBOSE_CONFIG["show_intent"]:
@@ -94,6 +80,50 @@ def run_query(user_query: str, session_id: str = None, verbose: bool = False) ->
     return result
 
 
+def process_single_query(user_input: str = None, verbose: bool = False, session_id: str = None, compiled_graph: CompiledStateGraph = None, initial_state: AgentState = None, checkpoint_config:dict=None) -> None:
+
+    console.print("\n[dim]正在处理您的查询...[/dim]\n")
+
+    result = run_query(user_input, session_id, compiled_graph, initial_state, checkpoint_config, verbose=verbose)
+    # 显示闲聊回复
+    if result.get("chat_mode") == "common":
+        console.print(Panel(
+            result["llm_messages"][-1].content,
+            title="[bold yellow]模型回复[/bold yellow]",
+            border_style="yellow"
+        ))
+
+    # 显示生成的SQL
+    if result.get("generated_sql"):
+        console.print(Panel(
+            result["generated_sql"],
+            title="[bold blue]生成的SQL[/bold blue]",
+            border_style="blue"
+        ))
+
+    # 显示查询结果
+    if result.get("query_results"):
+        results = result["query_results"]
+        console.print(f"\n[dim]查询返回 {len(results)} 条记录[/dim]")
+
+    # 显示最终答案
+    if result.get("final_answer"):
+        console.print(Panel(
+            Markdown(result["final_answer"]),
+            title="[bold green]回答[/bold green]",
+            border_style="green"
+        ))
+
+    # 显示错误信息
+    if result.get("error_message"):
+        console.print(Panel(
+            result["error_message"],
+            title="[bold red]错误[/bold red]",
+            border_style="red"
+        ))
+    return
+
+
 def interactive_mode(verbose: bool = False):
     """交互式问答模式
 
@@ -109,6 +139,10 @@ def interactive_mode(verbose: bool = False):
     ))
 
     session_id = str(uuid.uuid4())
+    ckpt_config = {"configurable": {"thread_id": session_id}}
+    checkpointer = MemorySaver()
+    # 编译图
+    compiled_graph = build_graph(checkpointer)
 
     while True:
         try:
@@ -120,46 +154,15 @@ def interactive_mode(verbose: bool = False):
 
             if not user_input.strip():
                 continue
-
-            console.print("\n[dim]正在处理您的查询...[/dim]\n")
-
-            result = run_query(user_input, session_id, verbose=verbose)
-            # 显示闲聊回复
-            if result.get("chat_mode") == "common":
-                console.print(Panel(
-                    result["llm_messages"][-1].content,
-                    title="[bold yellow]模型回复[/bold yellow]",
-                    border_style="yellow"
-                ))
-
-            # 显示生成的SQL
-            if result.get("generated_sql"):
-                console.print(Panel(
-                    result["generated_sql"],
-                    title="[bold blue]生成的SQL[/bold blue]",
-                    border_style="blue"
-                ))
-
-            # 显示查询结果
-            if result.get("query_results"):
-                results = result["query_results"]
-                console.print(f"\n[dim]查询返回 {len(results)} 条记录[/dim]")
-
-            # 显示最终答案
-            if result.get("final_answer"):
-                console.print(Panel(
-                    Markdown(result["final_answer"]),
-                    title="[bold green]回答[/bold green]",
-                    border_style="green"
-                ))
-
-            # 显示错误信息
-            if result.get("error_message"):
-                console.print(Panel(
-                    result["error_message"],
-                    title="[bold red]错误[/bold red]",
-                    border_style="red"
-                ))
+                # 初始化本轮状态
+            initial_state: AgentState = dict(user_query=user_input, session_id=session_id, intent="",
+                                             relevant_tables=[],
+                                             schema_context="", generated_sql="", sql_validation_result="",
+                                             retry_count=0,
+                                             query_results=[], execution_error=None, final_answer="",
+                                             error_message=None,
+                                             chat_mode="")
+            process_single_query(user_input, verbose=verbose, session_id=session_id, compiled_graph=compiled_graph, initial_state=initial_state, checkpoint_config=ckpt_config)
 
         except KeyboardInterrupt:
             console.print("\n[yellow]再见！[/yellow]")
@@ -218,14 +221,7 @@ def main():
         return
 
     if args.query:
-        result = run_query(args.query, verbose=args.verbose)
-        console.print(Panel(
-            result.get("final_answer", "无结果"),
-            title="[bold green]回答[/bold green]",
-            border_style="green"
-        ))
-        if result.get("generated_sql"):
-            console.print(f"\n[dim]SQL: {result['generated_sql']}[/dim]")
+        process_single_query(user_input=args.query, verbose=args.verbose)
         return
 
     # 默认进入交互式模式
