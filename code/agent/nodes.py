@@ -3,25 +3,13 @@ LangGraph节点实现
 每个节点负责工作流中的一个步骤
 """
 import re
-from http.cookiejar import debug
 import sqlparse
 from typing import Any
 from config import get_llm
 from tools import ALL_TOOLS
 from agent.state import AgentState
-from database.connection import list_tables_sync, get_table_schema_sync, execute_query_sync
+from database.connection import execute_query_sync
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, trim_messages
-
-# 全局配置，由main.py设置
-_verbose_config = {
-    "show_agentic_process": False
-}
-
-
-def set_verbose_config(config: dict):
-    """设置详细输出配置"""
-    global _verbose_config
-    _verbose_config.update(config)
 
 def load_memory_node(state: AgentState) -> dict[str, Any]:
     """加载历史对话记忆"""
@@ -65,17 +53,12 @@ def intent_recognition_node(state: AgentState) -> dict[str, Any]:
 {table_cnt}
 """
     messages = history + [HumanMessage(content=prompt), HumanMessage(content=user_query)]
-    print("####################")
-    print(messages)
-    print("####################")
     response = llm.invoke(messages)
     if response.content.strip().startswith("common"):
-        print("进入common聊天模式")
         return {
             "chat_mode": "common",
             "llm_messages": [HumanMessage(content=user_query), AIMessage(content=response.content.strip().strip("common").strip())]
         }
-    print("进入sql聊天模式")
     return {
         "chat_mode": "sql",
         "intent": response.content.strip().strip("sql").strip(),
@@ -87,7 +70,6 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
 
     通过ReAct Agent自主调用检索工具，多轮交互确保召回所有相关Schema
     """
-    print("进入agentic_schema_linking_node")
     user_query = state["user_query"]
     intent = state["intent"]
     llm = get_llm()
@@ -115,13 +97,6 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
 用户问题: {user_query}
 用户意图: {intent}
 """
-    if _verbose_config.get("show_agentic_process", False):
-        print("\n" + "=" * 60)
-        print("AgenticRAG Schema检索过程")
-        print("=" * 60)
-        print(f"用户问题: {user_query}")
-        print(f"用户意图: {intent}")
-        print("-" * 60)
 
     # 创建ReAct Agent
     react_agent = create_react_agent(model=llm, tools=ALL_TOOLS)
@@ -129,20 +104,9 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
     # 调用Agent进行多轮检索
     result = react_agent.invoke(input={
         "messages": [SystemMessage(content=system_prompt), HumanMessage(content=user_input)],
-    }, debug=True)
+    })
     # 从Agent的响应中提取找到的表名
     agent_messages = result.get("messages", [])
-
-    if _verbose_config.get("show_agentic_process", False):
-        print("\nAgent检索过程:")
-        for i, msg in enumerate(agent_messages):
-            if hasattr(msg, 'content') and msg.content:
-                print(f"\n[步骤 {i + 1}] {msg.__class__.__name__}:")
-                print(msg.content[:200] + "..." if len(msg.content) > 200 else msg.content)
-            if hasattr(msg, 'tool_calls') and msg.tool_calls:
-                for tool_call in msg.tool_calls:
-                    print(f"  → 调用工具: {tool_call.get('name', 'unknown')}")
-                    print(f"    参数: {tool_call.get('args', {})}")
 
     final_message = agent_messages[-1].content if agent_messages else ""
 
@@ -178,8 +142,6 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
 
     # 如果Agent没有找到表，回退到传统检索
     if not relevant_tables:
-        if _verbose_config.get("show_agentic_process", False):
-            print("\n⚠️  Agent未找到表，使用传统检索方法")
         from database.metadata import metadata_manager
         relevant_tables = metadata_manager.search_relevant_tables(user_query, top_k=5)
 
@@ -191,11 +153,6 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
     # 生成schema上下文
     from database.metadata import metadata_manager
     schema_context = metadata_manager.get_schema_context(relevant_tables, include_examples=True)
-
-    if _verbose_config.get("show_agentic_process", False):
-        print("\n" + "-" * 60)
-        print(f"✓ 最终找到的相关表: {relevant_tables}")
-        print("=" * 60 + "\n")
 
     return {
         "relevant_tables": relevant_tables,
