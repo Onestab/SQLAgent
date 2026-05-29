@@ -8,6 +8,7 @@ from typing import Any
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
+from rich.text import Text
 from agent.graph import build_graph
 from agent.state import AgentState
 from database.connection import initialize_demo_db
@@ -45,6 +46,12 @@ ANSWER_STAGE_LABELS = {
     "result_interpretation": "回答",
 }
 
+FINAL_STAGE_LABELS = {
+    "intent_recognition": "意图结果",
+    "sql_generation": "SQL 结果",
+    "result_interpretation": "最终回答",
+}
+
 
 class CliStreamRenderer:
     """渲染LangGraph流事件。"""
@@ -54,6 +61,7 @@ class CliStreamRenderer:
         self._active_llm_stage: tuple[str, str] | None = None
         self._active_agent_source: str | None = None
         self._node_status: dict[str, str] = {}
+        self._section_open: str | None = None
 
     def render(self, event: dict[str, Any]) -> None:
         event_type = event.get("type")
@@ -72,11 +80,13 @@ class CliStreamRenderer:
             self._flush_llm_stream()
             self._flush_agent_stream()
             self._node_status[node_name] = "running"
+            self._open_section("status", "STATUS", "cyan")
             self.console.print(f"[bold cyan]●[/bold cyan] {label}")
             return
 
         self._flush_llm_stream()
         self._flush_agent_stream()
+        self._open_section("status", "STATUS", "cyan")
         error = data.get("error")
         if error:
             self._node_status[node_name] = "error"
@@ -96,25 +106,31 @@ class CliStreamRenderer:
         elif event_name == "decision":
             route = data.get("route")
             text = "普通对话" if route == "common_chat" else "进入 SQL 路径"
+            self._open_section("status", "STATUS", "cyan")
             self.console.print(f"[dim]→ {text}[/dim]")
         elif event_name == "agent_task_start":
             task = data.get("task")
+            self._open_section("tool", "TOOL", "yellow")
             if task == "agent":
                 self.console.print("[dim]  Agent 正在规划下一步[/dim]")
             elif task == "tools":
                 self.console.print("[dim]  Agent 正在调用工具[/dim]")
         elif event_name == "tool_result":
+            self._open_section("tool", "TOOL", "yellow")
             tool = data.get("tool", "tool")
             output = (data.get("output") or "").strip()
             summary = output if output else "工具已返回结果"
             self.console.print(f"[yellow]  ↳ {tool}[/yellow] {summary}")
         elif event_name == "schema_linking_result":
+            self._open_section("tool", "TOOL", "yellow")
             tables = ", ".join(data.get("tables", []))
             self.console.print(f"[dim]  相关表: {tables}[/dim]")
         elif event_name == "schema_linking_fallback":
+            self._open_section("tool", "TOOL", "yellow")
             method = data.get("method")
             self.console.print(f"[dim]  回退检索: {method}[/dim]")
         elif event_name == "retry":
+            self._open_section("status", "STATUS", "cyan")
             retry_count = data.get("retry_count", 0)
             error = data.get("error", "")
             self.console.print(f"[yellow]  重试 {retry_count + 1}: {error}[/yellow]")
@@ -122,10 +138,13 @@ class CliStreamRenderer:
             self._flush_llm_stream()
             sql = data.get("sql", "")
             if sql:
+                self._open_section("final", "FINAL", "green")
                 self.console.print(Panel(sql, title="[bold blue]生成的SQL[/bold blue]", border_style="blue"))
         elif event_name == "sql_validation_start":
+            self._open_section("status", "STATUS", "cyan")
             self.console.print("[dim]  正在校验 SQL[/dim]")
         elif event_name == "sql_validation_end":
+            self._open_section("status", "STATUS", "cyan")
             status = data.get("status")
             if status == "valid":
                 stmt_type = data.get("statement_type", "")
@@ -134,8 +153,10 @@ class CliStreamRenderer:
             else:
                 self.console.print(f"[red]  SQL 校验失败[/red] {data.get('error', '')}")
         elif event_name == "sql_execution_start":
+            self._open_section("status", "STATUS", "cyan")
             self.console.print("[dim]  正在执行 SQL[/dim]")
         elif event_name == "sql_execution_end":
+            self._open_section("status", "STATUS", "cyan")
             if data.get("error"):
                 self.console.print(f"[red]  执行失败[/red] {data['error']}")
             else:
@@ -162,11 +183,17 @@ class CliStreamRenderer:
             self._flush_llm_stream()
             self._active_llm_stage = active_key
             if kind == "reasoning":
+                self._open_section("think", "THINK", "magenta")
                 label = THINKING_STAGE_LABELS.get(stage, "思考")
                 style = "magenta"
             else:
-                label = ANSWER_STAGE_LABELS.get(stage, LLM_STAGE_LABELS.get(stage, "输出"))
-                style = "bright_cyan"
+                section = "answer" if stage != "result_interpretation" else "final"
+                title = "ANSWER" if stage != "result_interpretation" else "FINAL"
+                color = "bright_cyan" if stage != "result_interpretation" else "green"
+                self._open_section(section, title, color)
+                labels = FINAL_STAGE_LABELS if stage == "result_interpretation" else ANSWER_STAGE_LABELS
+                label = labels.get(stage, LLM_STAGE_LABELS.get(stage, "输出"))
+                style = color
             self.console.print(f"[{style}]  {label}:[/{style}] ", end="")
         self.console.print(text, end="", soft_wrap=True)
 
@@ -178,9 +205,23 @@ class CliStreamRenderer:
         if self._active_agent_source != source:
             self._flush_agent_stream()
             self._active_agent_source = source
+            self._open_section("tool", "TOOL", "yellow")
             label = "Agent" if source == "agent" else f"Tool<{source}>"
             self.console.print(f"[yellow]  {label}:[/yellow] ", end="")
         self.console.print(text, end="", soft_wrap=True)
+
+    def _open_section(self, section: str, title: str, color: str) -> None:
+        if self._section_open == section:
+            return
+        self._flush_llm_stream()
+        self._flush_agent_stream()
+        if self._section_open is not None:
+            self.console.print()
+        header = Text()
+        header.append("┌─ ", style=color)
+        header.append(title, style=f"bold {color}")
+        self.console.print(header)
+        self._section_open = section
 
     def _flush_llm_stream(self) -> None:
         if self._active_llm_stage is not None:
@@ -195,6 +236,9 @@ class CliStreamRenderer:
     def finalize(self) -> None:
         self._flush_llm_stream()
         self._flush_agent_stream()
+        if self._section_open is not None:
+            self.console.print()
+            self._section_open = None
 
 
 def build_initial_state(user_input: str, session_id: str) -> AgentState:
@@ -284,7 +328,7 @@ def process_single_query(
         console.print(f"\n[dim]查询返回 {len(results)} 条记录[/dim]")
 
     if not stream and result.get("final_answer"):
-        console.print(Panel(Markdown(result["final_answer"]), title="[bold green]回答[/bold green]", border_style="green"))
+        console.print(Panel(Markdown(result["final_answer"]), title="[bold green]最终回答[/bold green]", border_style="green"))
 
     if result.get("error_message"):
         console.print(Panel(result["error_message"], title="[bold red]错误[/bold red]", border_style="red"))
