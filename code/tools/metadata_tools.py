@@ -21,9 +21,9 @@ def search_relevant_tables(query: str, top_k: int = 5) -> List[str]:
     """
     try:
         tables = metadata_manager.search_relevant_tables(query, top_k=top_k)
-        print("***************** search_relevant_tables ********************")
-        print(tables)
-        print("*************************************************************")
+        # print("***************** search_relevant_tables ********************")
+        # print(tables)
+        # print("*************************************************************")
         return tables
     except Exception as e:
         return [f"error: {str(e)}"]
@@ -45,9 +45,9 @@ def get_table_metadata(table_name: str) -> Dict[str, Any]:
         metadata = metadata_manager.get_table_metadata(table_name)
         if metadata is None:
             return {"error": f"Table '{table_name}' not found in metadata"}
-        print("***************** get_table_metadata ********************")
-        print(metadata)
-        print("*********************************************************")
+        # print("***************** get_table_metadata ********************")
+        # print(metadata)
+        # print("*********************************************************")
         return metadata
     except Exception as e:
         return {"error": str(e)}
@@ -67,9 +67,9 @@ def get_table_description(table_name: str) -> str:
         description = metadata_manager.get_table_description(table_name)
         if not description:
             return f"No description available for table '{table_name}'"
-        print("***************** get_table_description ********************")
-        print(description)
-        print("************************************************************")
+        # print("***************** get_table_description ********************")
+        # print(description)
+        # print("************************************************************")
         return description
     except Exception as e:
         return f"error: {str(e)}"
@@ -87,9 +87,9 @@ def get_related_tables(table_name: str) -> List[str]:
     """
     try:
         related = metadata_manager.get_related_tables(table_name)
-        print("***************** get_related_tables ********************")
-        print(related)
-        print("*********************************************************")
+        # print("***************** get_related_tables ********************")
+        # print(related)
+        # print("*********************************************************")
         return list(related)
     except Exception as e:
         return [f"error: {str(e)}"]
