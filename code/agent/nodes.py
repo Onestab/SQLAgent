@@ -9,7 +9,46 @@ from config import get_llm
 from tools import ALL_TOOLS
 from agent.state import AgentState
 from database.connection import execute_query_sync
+from langgraph.config import get_stream_writer
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, trim_messages
+
+def _stream_event(event_type: str, **payload: Any) -> None:
+    """向LangGraph流输出自定义事件。"""
+    try:
+        writer = get_stream_writer()
+    except Exception:
+        return
+    writer({"event": event_type, **payload})
+
+
+def _message_text(message: Any) -> str:
+    content = getattr(message, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text")
+                if text:
+                    parts.append(text)
+        return "".join(parts)
+    return str(content)
+
+
+def _stream_llm_text(llm: Any, messages: list[Any], *, stage: str) -> str:
+    """流式消费LLM输出，同时汇总完整文本。"""
+    _stream_event("llm_stage", stage=stage, status="start")
+    parts: list[str] = []
+    for chunk in llm.stream(messages):
+        text = _message_text(chunk)
+        if not text:
+            continue
+        parts.append(text)
+    full_text = "".join(parts).strip()
+    _stream_event("llm_stage", stage=stage, status="end", text=full_text)
+    return full_text
+
 
 def load_memory_node(state: AgentState) -> dict[str, Any]:
     """加载历史对话记忆"""
@@ -53,16 +92,18 @@ def intent_recognition_node(state: AgentState) -> dict[str, Any]:
 {table_cnt}
 """
     messages = history + [HumanMessage(content=prompt), HumanMessage(content=user_query)]
-    response = llm.invoke(messages)
-    if response.content.strip().startswith("common"):
+    response_text = _stream_llm_text(llm, messages, stage="intent_recognition")
+    if response_text.startswith("common"):
+        _stream_event("decision", node="intent_recognition", route="common_chat")
         return {
             "chat_mode": "common",
-            "llm_messages": [HumanMessage(content=user_query), AIMessage(content=response.content.strip().strip("common").strip())]
+            "llm_messages": [HumanMessage(content=user_query), AIMessage(content=response_text.strip().removeprefix("common").strip())]
         }
+    _stream_event("decision", node="intent_recognition", route="sql")
     return {
         "chat_mode": "sql",
-        "intent": response.content.strip().strip("sql").strip(),
-        "llm_messages": [HumanMessage(content=user_query), AIMessage(content=response.content)]
+        "intent": response_text.strip().removeprefix("sql").strip(),
+        "llm_messages": [HumanMessage(content=user_query), AIMessage(content=response_text)]
     }
 
 def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
@@ -97,16 +138,63 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
 用户问题: {user_query}
 用户意图: {intent}
 """
+    _stream_event("schema_linking_context", user_query=user_query, intent=intent)
 
     # 创建ReAct Agent
     react_agent = create_react_agent(model=llm, tools=ALL_TOOLS)
 
     # 调用Agent进行多轮检索
-    result = react_agent.invoke(input={
-        "messages": [SystemMessage(content=system_prompt), HumanMessage(content=user_input)],
-    })
-    # 从Agent的响应中提取找到的表名
-    agent_messages = result.get("messages", [])
+    agent_messages: list[Any] = []
+    for event in react_agent.stream(
+        input={"messages": [SystemMessage(content=system_prompt), HumanMessage(content=user_input)]},
+        stream_mode=["values", "updates", "messages", "tasks", "custom"],
+        version="v2",
+    ):
+        event_type = event.get("type")
+        data = event.get("data")
+        if event_type == "messages":
+            chunk, metadata = data
+            text = _message_text(chunk)
+            if text:
+                _stream_event(
+                    "agent_message_chunk",
+                    node="agentic_schema_linking",
+                    text=text,
+                    source=metadata.get("langgraph_node"),
+                    model=metadata.get("ls_provider"),
+                )
+        elif event_type == "tasks":
+            task_name = data.get("name")
+            if "input" in data:
+                _stream_event("agent_task_start", node="agentic_schema_linking", task=task_name)
+            else:
+                _stream_event(
+                    "agent_task_end",
+                    node="agentic_schema_linking",
+                    task=task_name,
+                    error=data.get("error"),
+                )
+        elif event_type == "updates":
+            for update_node, update_payload in data.items():
+                if update_node == "tools":
+                    messages = update_payload.get("messages", [])
+                    for msg in messages:
+                        tool_name = getattr(msg, "name", None)
+                        if tool_name:
+                            _stream_event(
+                                "tool_result",
+                                node="agentic_schema_linking",
+                                tool=tool_name,
+                                output=_message_text(msg)[:400],
+                            )
+                elif update_node == "agent":
+                    messages = update_payload.get("messages", [])
+                    if messages:
+                        agent_messages = messages
+        elif event_type == "values":
+            value_messages = data.get("messages", [])
+            if value_messages:
+                agent_messages = value_messages
 
     final_message = agent_messages[-1].content if agent_messages else ""
 
@@ -143,16 +231,19 @@ def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
     # 如果Agent没有找到表，回退到传统检索
     if not relevant_tables:
         from database.metadata import metadata_manager
+        _stream_event("schema_linking_fallback", method="metadata_search")
         relevant_tables = metadata_manager.search_relevant_tables(user_query, top_k=5)
 
     # 如果仍然没有找到，使用所有表的前几个
     if not relevant_tables:
         from database.connection import list_tables_sync
+        _stream_event("schema_linking_fallback", method="list_tables")
         relevant_tables = list_tables_sync()[:3]
 
     # 生成schema上下文
     from database.metadata import metadata_manager
     schema_context = metadata_manager.get_schema_context(relevant_tables, include_examples=True)
+    _stream_event("schema_linking_result", tables=relevant_tables)
 
     return {
         "relevant_tables": relevant_tables,
@@ -205,16 +296,12 @@ def sql_generation_node(state: AgentState) -> dict[str, Any]:
 上一次执行出错了，错误信息: {execution_error}
 请修正SQL语句。
 """
+        _stream_event("retry", node="sql_generation", retry_count=retry_count, error=execution_error)
 
     messages = [HumanMessage(content=prompt)]
-    # 开启思考模式，需要同步修改response接收方式
-    # response = llm.invoke(messages, reasoning={
-    #     "effort": "medium",  # 'low', 'medium', or 'high'
-    #     "summary": "detailed",  # 'detailed', 'auto', or None
-    # }, )
-    response = llm.invoke(messages)
+    response_text = _stream_llm_text(llm, messages, stage="sql_generation")
     # 提取SQL语句
-    sql = response.content.strip()
+    sql = response_text.strip()
     # 移除可能的markdown代码块标记
     if sql.startswith("```sql"):
         sql = sql[6:]
@@ -223,6 +310,7 @@ def sql_generation_node(state: AgentState) -> dict[str, Any]:
     if sql.endswith("```"):
         sql = sql[:-3]
     sql = sql.strip()
+    _stream_event("sql_generated", sql=sql)
 
     return {
         "generated_sql": sql,
@@ -235,26 +323,31 @@ def sql_generation_node(state: AgentState) -> dict[str, Any]:
 def sql_validation_node(state: AgentState) -> dict[str, Any]:
     """SQL验证节点：验证SQL语法"""
     sql = state["generated_sql"]
+    _stream_event("sql_validation_start")
 
     try:
         parsed = sqlparse.parse(sql)
         if not parsed:
+            _stream_event("sql_validation_end", status="invalid", error="Empty SQL statement")
             return {"sql_validation_result": "invalid", "execution_error": "Empty SQL statement"}
 
         stmt = parsed[0]
         stmt_type = stmt.get_type()
 
         if stmt_type not in ('SELECT', 'INSERT', 'UPDATE', 'DELETE'):
+            _stream_event("sql_validation_end", status="invalid", error=f"Unsupported statement type: {stmt_type}")
             return {"sql_validation_result": "invalid", "execution_error": f"Unsupported statement type: {stmt_type}"}
 
         # 格式化SQL
         formatted_sql = sqlparse.format(sql, reindent=True, keyword_case='upper')
+        _stream_event("sql_validation_end", status="valid", statement_type=stmt_type)
 
         return {
             "sql_validation_result": "valid",
             "generated_sql": formatted_sql
         }
     except Exception as e:
+        _stream_event("sql_validation_end", status="invalid", error=str(e))
         return {
             "sql_validation_result": "invalid",
             "execution_error": f"SQL validation error: {str(e)}"
@@ -264,14 +357,17 @@ def sql_validation_node(state: AgentState) -> dict[str, Any]:
 def sql_execution_node(state: AgentState) -> dict[str, Any]:
     """SQL执行节点：执行SQL查询"""
     sql = state["generated_sql"]
+    _stream_event("sql_execution_start", sql=sql)
 
     try:
         results = execute_query_sync(sql)
+        _stream_event("sql_execution_end", row_count=len(results))
         return {
             "query_results": results,
             "execution_error": None
         }
     except Exception as e:
+        _stream_event("sql_execution_end", error=str(e))
         return {
             "query_results": [],
             "execution_error": f"SQL execution error: {str(e)}"
@@ -305,11 +401,11 @@ def result_interpretation_node(state: AgentState) -> dict[str, Any]:
 """
 
     messages = [HumanMessage(content=prompt)]
-    response = llm.invoke(messages)
+    response_text = _stream_llm_text(llm, messages, stage="result_interpretation")
 
     return {
-        "final_answer": response.content,
-        "llm_messages": [AIMessage(content=response.content)]
+        "final_answer": response_text,
+        "llm_messages": [AIMessage(content=response_text)]
     }
 
 
