@@ -7,6 +7,7 @@ class AgentState(TypedDict):
     session_id: str
     intent: str
     chat_mode: str
+    common_reply: str
     relevant_tables: list[str]
     schema_context: str
     generated_sql: str

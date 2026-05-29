@@ -62,6 +62,7 @@ class CliStreamRenderer:
         self._active_agent_source: str | None = None
         self._node_status: dict[str, str] = {}
         self._section_open: str | None = None
+        self._llm_accumulated: dict[tuple[str, str], str] = {}
 
     def render(self, event: dict[str, Any]) -> None:
         event_type = event.get("type")
@@ -169,6 +170,9 @@ class CliStreamRenderer:
         status = data.get("status")
         if status == "start":
             self._flush_llm_stream()
+            if stage:
+                self._llm_accumulated.pop((stage, "reasoning"), None)
+                self._llm_accumulated.pop((stage, "answer"), None)
         elif status == "end":
             self._flush_llm_stream()
             self._active_llm_stage = None
@@ -179,6 +183,9 @@ class CliStreamRenderer:
         if not text or not stage:
             return
         active_key = (stage, kind)
+        text = self._sanitize_llm_chunk(stage, kind, text)
+        if not text:
+            return
         if self._active_llm_stage != active_key:
             self._flush_llm_stream()
             self._active_llm_stage = active_key
@@ -194,8 +201,9 @@ class CliStreamRenderer:
                 labels = FINAL_STAGE_LABELS if stage == "result_interpretation" else ANSWER_STAGE_LABELS
                 label = labels.get(stage, LLM_STAGE_LABELS.get(stage, "输出"))
                 style = color
-            self.console.print(f"[{style}]  {label}:[/{style}] ", end="")
+            self.console.print(f"[{style}]  {label}[/{style}] ", end="")
         self.console.print(text, end="", soft_wrap=True)
+        self._llm_accumulated[active_key] = self._llm_accumulated.get(active_key, "") + text
 
     def _handle_agent_chunk(self, data: dict[str, Any]) -> None:
         source = data.get("source") or "agent"
@@ -223,6 +231,26 @@ class CliStreamRenderer:
         self.console.print(header)
         self._section_open = section
 
+    def _sanitize_llm_chunk(self, stage: str, kind: str, text: str) -> str:
+        active_key = (stage, kind)
+        existing = self._llm_accumulated.get(active_key, "")
+        if existing:
+            return text
+
+        normalized = text.lstrip()
+        if kind == "reasoning":
+            for prefix in ("思考：", "思考:", "推理：", "推理:"):
+                if normalized.startswith(prefix):
+                    normalized = normalized[len(prefix):].lstrip()
+                    break
+            return normalized
+
+        for prefix in ("结论：", "结论:", "回答：", "回答:", "最终回答：", "最终回答:"):
+            if normalized.startswith(prefix):
+                normalized = normalized[len(prefix):].lstrip()
+                break
+        return normalized
+
     def _flush_llm_stream(self) -> None:
         if self._active_llm_stage is not None:
             self.console.print()
@@ -247,6 +275,7 @@ def build_initial_state(user_input: str, session_id: str) -> AgentState:
         session_id=session_id,
         intent="",
         relevant_tables=[],
+        common_reply="",
         schema_context="",
         generated_sql="",
         sql_validation_result="",
@@ -317,9 +346,8 @@ def process_single_query(
         stream=stream,
     )
 
-    if not stream and result.get("chat_mode") == "common" and result.get("llm_messages"):
-        last_message = result["llm_messages"][-1]
-        content = getattr(last_message, "content", "")
+    if not stream and result.get("chat_mode") == "common":
+        content = result.get("common_reply", "")
         if content:
             console.print(Panel(content, title="[bold yellow]模型回复[/bold yellow]", border_style="yellow"))
 

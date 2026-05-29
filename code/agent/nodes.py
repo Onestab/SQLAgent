@@ -2,6 +2,7 @@
 LangGraph节点实现
 每个节点负责工作流中的一个步骤
 """
+import json
 import re
 import sqlparse
 from typing import Any
@@ -56,7 +57,8 @@ def _stream_llm_text(llm: Any, messages: list[Any], *, stage: str) -> str:
         if not text:
             continue
         parts.append(text)
-        _stream_event("llm_answer_chunk", stage=stage, text=text)
+        if stage != "intent_recognition":
+            _stream_event("llm_answer_chunk", stage=stage, text=text)
     full_text = "".join(parts).strip()
     _stream_event("llm_stage", stage=stage, status="end", text=full_text)
     return full_text
@@ -89,13 +91,16 @@ def intent_recognition_node(state: AgentState) -> dict[str, Any]:
     history = state.get("llm_messages", [])
     prompt = f"""根据当前问题及历史对话判断用户意图。
 
-如果回答用户当前问题必须查询数据库，则返回字符串sql，并简要说明用户的查询意图（1-2句话，如有指代关系需要替换成实际名称）
+你的任务是输出一个JSON对象，不要输出任何额外说明、markdown、前后缀。
 
-如果判断用户不需要访问数据库，则返回字符串common，并直接回答用户问题。
-
-输出格式：
-- 需要查询数据库情况：sql 用户查询意图
-- 无需查询数据库情况：common 你的回答
+规则：
+1. 如果回答当前问题必须查询数据库，输出：
+{{"chat_mode":"sql","intent":"..."}}
+其中 intent 需要用1-2句话概括用户真实查询意图，如有指代关系要替换成实际名称。
+2. 如果当前问题不需要访问数据库，输出：
+{{"chat_mode":"common","reply":"..."}}
+其中 reply 直接是给用户的自然语言回答。
+3. 只能返回一个合法JSON对象。
 
 当前数据库包含的表：
 {"\n".join(db_info)}
@@ -105,18 +110,46 @@ def intent_recognition_node(state: AgentState) -> dict[str, Any]:
 """
     messages = history + [HumanMessage(content=prompt), HumanMessage(content=user_query)]
     response_text = _stream_llm_text(llm, messages, stage="intent_recognition")
-    if response_text.startswith("common"):
+    parsed = _parse_intent_response(response_text)
+    if parsed["chat_mode"] == "common":
+        _stream_event("llm_answer_chunk", stage="intent_recognition", text=parsed["reply"])
         _stream_event("decision", node="intent_recognition", route="common_chat")
         return {
             "chat_mode": "common",
-            "llm_messages": [HumanMessage(content=user_query), AIMessage(content=response_text.strip().removeprefix("common").strip())]
+            "common_reply": parsed["reply"],
+            "llm_messages": [HumanMessage(content=user_query), AIMessage(content=parsed["reply"])]
         }
+    _stream_event("llm_answer_chunk", stage="intent_recognition", text=parsed["intent"])
     _stream_event("decision", node="intent_recognition", route="sql")
     return {
         "chat_mode": "sql",
-        "intent": response_text.strip().removeprefix("sql").strip(),
-        "llm_messages": [HumanMessage(content=user_query), AIMessage(content=response_text)]
+        "intent": parsed["intent"],
+        "llm_messages": [HumanMessage(content=user_query), AIMessage(content=parsed["intent"])]
     }
+
+
+def _parse_intent_response(response_text: str) -> dict[str, str]:
+    """解析意图识别节点的结构化输出。"""
+    try:
+        payload = json.loads(response_text)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", response_text, re.DOTALL)
+        if not match:
+            raise ValueError(f"Intent recognition response is not valid JSON: {response_text}")
+        payload = json.loads(match.group(0))
+
+    chat_mode = payload.get("chat_mode")
+    if chat_mode == "common":
+        reply = str(payload.get("reply", "")).strip()
+        if not reply:
+            raise ValueError(f"Missing common reply in intent response: {response_text}")
+        return {"chat_mode": "common", "reply": reply}
+    if chat_mode == "sql":
+        intent = str(payload.get("intent", "")).strip()
+        if not intent:
+            raise ValueError(f"Missing sql intent in intent response: {response_text}")
+        return {"chat_mode": "sql", "intent": intent}
+    raise ValueError(f"Unknown chat_mode in intent response: {response_text}")
 
 def agentic_schema_linking_node(state: AgentState) -> dict[str, Any]:
     """Agentic RAG 方式实现的模式链接节点：识别相关表和列
