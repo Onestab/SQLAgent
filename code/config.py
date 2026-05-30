@@ -50,6 +50,7 @@ class AppConfig(BaseModel):
     # 应用配置
     debug: bool = False
     max_retry_attempts: int = 3
+    checkpoint_db_path: str = "./database/langgraph_checkpoints.sqlite"
 
     @field_validator("llm_provider")
     @classmethod
@@ -106,6 +107,7 @@ def load_config() -> AppConfig:
         db_password=os.getenv("DB_PASSWORD", ""),
         debug=os.getenv("DEBUG", "false").lower() == "true",
         max_retry_attempts=int(os.getenv("MAX_RETRY_ATTEMPTS", "3")),
+        checkpoint_db_path=os.getenv("CHECKPOINT_DB_PATH", "./database/langgraph_checkpoints.sqlite"),
     )
 
 

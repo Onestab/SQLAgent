@@ -1,11 +1,12 @@
 from langgraph.graph import StateGraph, START, END
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 from typing import TypedDict, Annotated, Optional, Any
 from config import get_llm
 import operator
 from langchain_core.messages import HumanMessage, AIMessage
 from rich.console import Console
 from rich.panel import Panel
+from pathlib import Path
 console = Console()
 
 class AgentState(TypedDict):
@@ -27,31 +28,33 @@ def ask_user_node(state: AgentState) -> dict[str, Any]:
         "messages": [HumanMessage(content=user_query), AIMessage(content=response.content)]
     }
 
-# 1. 创建内存保存器
-memory_saver = MemorySaver()
+checkpoint_path = Path(__file__).resolve().parent / "database" / "test_memory_checkpoints.sqlite"
+checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
 
-# 2. 构建图时传入 checkpointer
+# 1. 构建图
 builder = StateGraph(AgentState)
 builder.add_node("ask_user", ask_user_node)
 builder.add_edge(START, "ask_user")
 builder.add_edge("ask_user", END)
 
-graph = builder.compile(checkpointer=memory_saver)
+# 2. 使用 SQLite 持久化 checkpoint
+with SqliteSaver.from_conn_string(str(checkpoint_path)) as checkpointer:
+    graph = builder.compile(checkpointer=checkpointer)
 
-# 3. 配置 thread_id（Checkpoint 的命名空间，必须唯一）
-config = {"configurable": {"thread_id": "session_abc123"}}
+    # 3. 配置 thread_id（Checkpoint 的命名空间，必须唯一）
+    config = {"configurable": {"thread_id": "session_abc123"}}
 
-# 4. 执行（支持中断）
-result = graph.invoke({"user_query": "你是一个复读机，从下一轮开始，我说什么你就得重复什么"}, config)
-console.print(Panel(
-    result["messages"][-1].content,
-    title="[bold yellow]模型回复[/bold yellow]",
-    border_style="yellow"
-))
+    # 4. 执行（支持中断）
+    result = graph.invoke({"user_query": "你是一个复读机，从下一轮开始，我说什么你就得重复什么"}, config)
+    console.print(Panel(
+        result["messages"][-1].content,
+        title="[bold yellow]模型回复[/bold yellow]",
+        border_style="yellow"
+    ))
 
-result = graph.invoke({"user_query": "啊吧啊吧"}, config)
-console.print(Panel(
-    result["messages"][-1].content,
-    title="[bold yellow]模型回复[/bold yellow]",
-    border_style="yellow"
-))
+    result = graph.invoke({"user_query": "啊吧啊吧"}, config)
+    console.print(Panel(
+        result["messages"][-1].content,
+        title="[bold yellow]模型回复[/bold yellow]",
+        border_style="yellow"
+    ))

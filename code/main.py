@@ -2,6 +2,8 @@
 SQLAgent主程序
 基于LangGraph的智能问数系统
 """
+from contextlib import contextmanager
+from pathlib import Path
 import uuid
 from typing import Any
 
@@ -11,8 +13,9 @@ from rich.panel import Panel
 from rich.text import Text
 from agent.graph import build_graph
 from agent.state import AgentState
+from config import config
 from database.connection import initialize_demo_db
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph.state import CompiledStateGraph
 
 
@@ -238,6 +241,23 @@ class CliStreamRenderer:
             self._section_open = None
 
 
+def ensure_checkpoint_db_path() -> Path:
+    """确保 checkpoint sqlite 文件所在目录存在。"""
+    checkpoint_path = Path(config.checkpoint_db_path).expanduser()
+    if not checkpoint_path.is_absolute():
+        checkpoint_path = Path(__file__).resolve().parent / checkpoint_path
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    return checkpoint_path
+
+
+@contextmanager
+def graph_session() -> Any:
+    """创建绑定 SQLite checkpointer 的图会话。"""
+    checkpoint_path = ensure_checkpoint_db_path()
+    with SqliteSaver.from_conn_string(str(checkpoint_path)) as checkpointer:
+        yield build_graph(checkpointer)
+
+
 def build_initial_state(user_input: str, session_id: str) -> AgentState:
     return dict(
         user_query=user_input,
@@ -331,7 +351,7 @@ def process_single_query(
         console.print(Panel(result["error_message"], title="[bold red]错误[/bold red]", border_style="red"))
 
 
-def interactive_mode(stream: bool = True) -> None:
+def interactive_mode(stream: bool = True, session_id: str | None = None) -> None:
     """交互式问答模式"""
     console.print(Panel.fit(
         "[bold cyan]SQLAgent - 智能问数系统[/bold cyan]\n"
@@ -341,37 +361,36 @@ def interactive_mode(stream: bool = True) -> None:
         border_style="cyan"
     ))
 
-    session_id = str(uuid.uuid4())
+    session_id = session_id or str(uuid.uuid4())
     ckpt_config = {"configurable": {"thread_id": session_id}}
-    checkpointer = MemorySaver()
-    compiled_graph = build_graph(checkpointer)
 
-    while True:
-        try:
-            user_input = console.input("\n[bold green]您的问题:[/bold green] ")
+    with graph_session() as compiled_graph:
+        while True:
+            try:
+                user_input = console.input("\n[bold green]您的问题:[/bold green] ")
 
-            if user_input.lower() in ["exit", "quit", "q"]:
-                console.print("[yellow]再见！[/yellow]")
+                if user_input.lower() in ["exit", "quit", "q"]:
+                    console.print("[yellow]再见！[/yellow]")
+                    break
+
+                if not user_input.strip():
+                    continue
+
+                initial_state = build_initial_state(user_input, session_id)
+                process_single_query(
+                    user_input,
+                    session_id=session_id,
+                    compiled_graph=compiled_graph,
+                    initial_state=initial_state,
+                    checkpoint_config=ckpt_config,
+                    stream=stream,
+                )
+
+            except KeyboardInterrupt:
+                console.print("\n[yellow]再见！[/yellow]")
                 break
-
-            if not user_input.strip():
-                continue
-
-            initial_state = build_initial_state(user_input, session_id)
-            process_single_query(
-                user_input,
-                session_id=session_id,
-                compiled_graph=compiled_graph,
-                initial_state=initial_state,
-                checkpoint_config=ckpt_config,
-                stream=stream,
-            )
-
-        except KeyboardInterrupt:
-            console.print("\n[yellow]再见！[/yellow]")
-            break
-        except Exception as e:
-            console.print(f"[bold red]错误:[/bold red] {str(e)}")
+            except Exception as e:
+                console.print(f"[bold red]错误:[/bold red] {str(e)}")
 
 
 def main() -> None:
@@ -383,6 +402,7 @@ def main() -> None:
     parser.add_argument("--query", type=str, help="直接执行查询")
     parser.add_argument("--interactive", action="store_true", help="交互式模式")
     parser.add_argument("--no-stream", action="store_true", help="关闭流式输出")
+    parser.add_argument("--session-id", type=str, help="指定会话ID，用于复用历史记忆")
 
     args = parser.parse_args()
     stream = not args.no_stream
@@ -394,22 +414,21 @@ def main() -> None:
         return
 
     if args.query:
-        checkpointer = MemorySaver()
-        compiled_graph = build_graph(checkpointer)
-        session_id = str(uuid.uuid4())
+        session_id = args.session_id or str(uuid.uuid4())
         ckpt_config = {"configurable": {"thread_id": session_id}}
         initial_state = build_initial_state(args.query, session_id)
-        process_single_query(
-            user_input=args.query,
-            session_id=session_id,
-            compiled_graph=compiled_graph,
-            initial_state=initial_state,
-            checkpoint_config=ckpt_config,
-            stream=stream,
-        )
+        with graph_session() as compiled_graph:
+            process_single_query(
+                user_input=args.query,
+                session_id=session_id,
+                compiled_graph=compiled_graph,
+                initial_state=initial_state,
+                checkpoint_config=ckpt_config,
+                stream=stream,
+            )
         return
 
-    interactive_mode(stream=stream)
+    interactive_mode(stream=stream, session_id=args.session_id)
 
 
 if __name__ == "__main__":
